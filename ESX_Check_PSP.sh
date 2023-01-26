@@ -10,28 +10,32 @@
 ##########################################################
 
 
+RED='\033[0;31m'
+NCO='\033[0m'
+
+
 #list all DataCore Virtual disks devices (naa.60030d9)
 
 esxcli storage core adapter device list | awk '/naa.60030d9/ {print $2}'| while read NAA
 do
 
         #dump some data
-        DEVICE=$(esxcli storage nmp device list --device $NAA)
-        NAME=$(echo "$DEVICE"| awk -F":" '/Device Display Name:/ {print $2}')
-        PSP=$(echo "$DEVICE"| awk -F":" '/Path Selection Policy:/ {print $2}')
-        OPTION=$(echo "$DEVICE"| awk -F":" '/Path Selection Policy Device Config:/ {print $2}')
-        let NC=58-$(echo $NAME|wc -L)
+        DEVICE=$(esxcli storage nmp device list --device ${NAA})
+        NAME=$(echo "${DEVICE}"| awk -F":" '/Device Display Name:/ {print $2}')
+        PSP=$(echo "${DEVICE}"| awk -F":" '/Path Selection Policy:/ {print $2}')
+        OPTION=$(echo "${DEVICE}"| awk -F":" '/Path Selection Policy Device Config:/ {print $2}')
+        let NC=58-$(echo ${NAME}|wc -L)
         BLANK=$(awk -v nc=$NC 'BEGIN{for(c=0;c<nc;c++) printf " "}')
 
         NEWPSP=""
         #check if the PSP is VMware RoundRobin PSP
-        if [[ "$PSP" != " VMW_PSP_RR" ]]
+        if [[ "${PSP}" != " VMW_PSP_RR" ]]
         then
 
                 #If it's not PSP RR, it will change it to RoundRobin policy
-                esxcli storage nmp device set --device $NAA --psp VMW_PSP_RR
-                echo "$NAA ($NAME)$BLANK $PSP $OPTION changed to VMW_PSP_RR"
+                esxcli storage nmp device set --device ${NAA} --psp VMW_PSP_RR
+                echo -e "${RED}${NAA} (${NAME})${BLANK} ${PSP} ${OPTION} changed to VMW_PSP_RR${NCO}"
         else
-                echo "$NAA ($NAME)$BLANK $PSP $OPTION"
+                echo -e "${NCO}${NAA} (${NAME})${BLANK} ${PSP} ${OPTION}"
         fi
 done
