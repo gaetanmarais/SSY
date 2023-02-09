@@ -32,12 +32,11 @@ done
 echo "HBA"
 echo "-------------------------------------------------"
 
-#SAS list
-esxcli storage san sas list
 
 SAS=$(esxcli storage san sas list | grep "Device Name")
-for NAME in `echo $SAS| awk -F":" '{print $2}'`
+for NAME in `echo "$SAS"| awk -F":" '{print $2}'`
 do
+esxcli storage san sas list -A $NAME
 echo "VID :DID  SVID:SDID"
 VALUE=$(vmkchdev -l | grep $NAME | awk '{print $2, $3}')
 VID=$(echo $VALUE|awk '{print $1}'|awk -F":" '{print $1}')
