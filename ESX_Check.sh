@@ -10,6 +10,15 @@
 
 
 clear
+
+
+#Show ESX version
+echo "ESX VERSION"
+echo "-------------------------------------------------"
+esxcli system version get
+echo "-------------------------------------------------"
+
+
 #Check NETWORK
 echo "NETWORK"
 echo "-------------------------------------------------"
