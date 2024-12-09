@@ -333,6 +333,12 @@ if ( $ROLE -in @("PRODUCTION","HyperV") ) {
     $ADAPTERS -split(",")|% {
         $i++
         $ADAPTER=$_
+        if ( (($ADAPTERS -split(",")).count -gt 1) -and ($ADAPTER -in (Get-VMSwitch).name) ) { 
+            Write-Host " ! sorry, Not possible to use multiple vswitch " 
+            Read-Host
+            createNetwork 
+            }
+
         $ANSWER=Read-host "Do you want to rename this Adapter ${ADAPTER} [y/N]"
 
         if ( ${ANSWER} -eq "y" ) {
