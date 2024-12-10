@@ -10,7 +10,7 @@
 ####
 #### Version    : 2.0
 ####            : 2.1 - Add VLAN   24/12/09
-####              
+####            : 2.2 - Add DNS    24/12/10
 ####
 #### 
 ####
@@ -204,6 +204,72 @@ return $binaryString.TrimEnd('0').Length
 }
 
 
+function createvNic {
+
+        $RESULT = (Get-NetIPAddress -InterfaceAlias "${NEWVNIC}" -AddressFamily IPv4 -ErrorAction SilentlyContinue)
+        $RESULT | Select-Object InterfaceAlias,IPAddress,PrefixLength | ft
+        $ANSWER=read-host -p "Do you want to change this IP address [y/N]"
+        if ( $ANSWER -eq "y" ) {
+            $ERR="false"
+            while ( $ERR -ne "true" ) {
+                $IPADD=Read-Host -p "Enter new IP address"
+                $ERR=checkip $IPADD
+                }
+
+            $ERR="false"
+            $SUBNET=0
+            while ( $ERR -ne "true" ) {
+                $NETMASK=Read-Host -p "Enter Netmask or Subnet"
+                if ( $NETMASK -in (1..32 )) {$ERR="true"}
+                elseif ( $ERR=checkip $NETMASK ) { $SUBNET=1 }
+                }
+            
+            if ( $RESULT.PrefixOrigin -eq "manual" ) { Remove-NetIPAddress -InterfaceIndex $RESULT.ifIndex -AddressFamily IPv4 -Confirm:$false | Out-Null }
+            if ( $SUBNET -eq 1 ) { $NETMASK=Sub2Net $NETMASK}
+#Gateway
+            $ERR="false"
+            while ( $ERR -ne "true" ) {
+                Remove-Variable -Name GATEWAY -ErrorAction SilentlyContinue
+                $GATEWAY=Read-host -p "Enter Gateway [empty if no Gateway]"
+                if ($GATEWAY) { $ERR=checkip $GATEWAY }
+                else { $ERR = "true" }
+                }
+#DNS
+            $ERR="false"
+            while ( $ERR -ne "true" ) {
+                Remove-Variable -Name DNS -ErrorAction SilentlyContinue
+                $DNS=Read-host -p "Enter DNS server [empty if no DNS, comma separate if 2 entries]"
+                if ($DNS) { 
+                    $DNS -split(",") | % {
+                        $DNS1=$_
+                        $ERR=checkip $DNS1 
+                        }
+                    }
+                else { $ERR = "true" }
+                }
+#VLAN
+            $ERR="false"      
+            while ( $ERR -ne "true" ) {
+                $VLAN=Read-Host -p "Enter VLANID [Empty if no VLAN]"
+                if ( $VLAN -in (0..4094 )) {$ERR="true"}
+                elseif ( ! ( $VLAN ) ) { $VLAN=0; $ERR = "true" }
+                }    
+
+#Create Interface
+            if (! ( $GATEWAY ) ){
+                new-NetIPAddress -InterfaceAlias "${NEWVNIC}" -AddressFamily IPv4 -IPAddress $IPADD -PrefixLength $NETMASK | Out-Null
+                }
+            else {
+                new-NetIPAddress -InterfaceAlias "${NEWVNIC}" -AddressFamily IPv4 -IPAddress $IPADD -PrefixLength $NETMASK -DefaultGateway $GATEWAY | Out-Null
+                }
+            if ( $DNS ) { Set-DnsClientServerAddress -InterfaceAlias "${NEWVNIC}" -ServerAddresses $DNS  }
+            Set-VMNetworkAdapterVlan -VMNetworkAdapterName "${NEWVNIC}" -VlanID ${VLAN} -ManagementOS -Access
+            }
+
+
+
+}
+
 function createNetwork {
 
 $ROLES=@("iSCSI1","iSCSI2","HYPERV","PRODUCTION","QUIT")
@@ -257,12 +323,12 @@ if ( $ROLE -like "iSCSI*") {
         iSCSI2 { $VNICS=@("VNIC_INIT2","VNIC_FE2","VNIC_MR2") }
     }
 
-    if ( !(Get-VMSwitch -name "${SHORTNAME}_SW_${ROLE}" -ErrorAction SilentlyContinue) ) { 
-        New-VMSwitch -name "${SHORTNAME}_SW_${ROLE}" -NetAdapterName "${ISCSIADPTER}" -AllowManagementOS 0 
-        write-host "* VMswitch ""${SHORTNAME}_SW_${ROLE}"" created"
+    if ( !(Get-VMSwitch -name "SW_${ROLE}" -ErrorAction SilentlyContinue) ) { 
+        New-VMSwitch -name "SW_${ROLE}" -NetAdapterName "${ISCSIADPTER}" -AllowManagementOS 0 
+        write-host "* VMswitch ""SW_${ROLE}"" created"
     }
     else {
-        write-host "! VMswitch ""${SHORTNAME}_SW_${ROLE}"" already exist"
+        write-host "! VMswitch ""SW_${ROLE}"" already exist"
     }
 
 
@@ -270,7 +336,7 @@ if ( $ROLE -like "iSCSI*") {
 
     $VNIC=$_
     if ( ! ( (Get-VMNetworkAdapter -ManagementOS -Name "vEthernet (${SHORTNAME}_${VNIC})" -ErrorAction SilentlyContinue ) -or (Get-VMNetworkAdapter -ManagementOS -Name "${SHORTNAME}_${VNIC}" -ErrorAction SilentlyContinue) ) ) { 
-        Add-VMNetworkAdapter -ManagementOS -Name "${SHORTNAME}_${VNIC}" -SwitchName "${SHORTNAME}_SW_${ROLE}"
+        Add-VMNetworkAdapter -ManagementOS -Name "${SHORTNAME}_${VNIC}" -SwitchName "SW_${ROLE}"
         Rename-NetAdapter -name "vEthernet (${SHORTNAME}_${VNIC})" -newname "${SHORTNAME}_${VNIC}"
         write-host "* Virtual interface ""${SHORTNAME}_${VNIC}"" created"
         }
@@ -352,7 +418,7 @@ if ( $ROLE -in @("PRODUCTION","HyperV") ) {
         
 
     }
-    $SWITCHNAME="${SHORTNAME}_SW_${ROLE}"
+    $SWITCHNAME="SW_${ROLE}"
     if ( Get-VMSwitch "$SWITCHNAME" -ErrorAction SilentlyContinue ) {
        
         write-host "Switch $SWITCHNAME already exist"
@@ -376,123 +442,36 @@ if ( $ROLE -in @("PRODUCTION","HyperV") ) {
     else {
         write-host "! Virtual interface ""${SHORTNAME}_${VNIC}"" already exist"
         }
+    $NEWVNIC="${SHORTNAME}_${VNIC}"
 
-    $RESULT = (Get-NetIPAddress -InterfaceAlias "${SHORTNAME}_${VNIC}" -AddressFamily IPv4 -ErrorAction SilentlyContinue)
-    $RESULT | Select-Object InterfaceAlias,IPAddress,PrefixLength | ft
-    $ANSWER=read-host -p "Do you want to change this IP address [y/N]"
- 
-    if ( $ANSWER -eq "y" ) {
- 
-        $ERR="false"
-        while ( $ERR -ne "true" ) {
-            $IPADD=Read-Host -p "Enter new IP address"
-            $ERR=checkip $IPADD
-            }
-
-        $ERR="false"
-        $SUBNET=0
-        while ( $ERR -ne "true" ) {
-            $NETMASK=Read-Host -p "Enter Netmask or Subnet"
-            if ( $NETMASK -in (1..32 )) {$ERR="true"}
-            elseif ( $ERR=checkip $NETMASK ) { $SUBNET=1 }
-            }
-            
-        if ( $RESULT.PrefixOrigin -eq "manual" ) { Remove-NetIPAddress -InterfaceIndex $RESULT.ifIndex -AddressFamily IPv4 -Confirm:$false | Out-Null }
-        if ( $SUBNET -eq 1 ) { $NETMASK=Sub2Net $NETMASK}
-
-        $ERR="false"
-        Remove-Variable -Name GATEWAY -ErrorAction SilentlyContinue
-        while ( $ERR -ne "true" ) {
-            $GATEWAY=Read-host -p "Enter Gateway [empty if no Gateway]"
-            if ($GATEWAY) { $ERR=checkip $GATEWAY }
-            else { $ERR = "true" }
-        }
-
-        $ERR="false"
-        while ( $ERR -ne "true" ) {
-            $VLAN=Read-Host -p "Enter VLANID [Empty if no VLAN]"
-            if ( $VLAN -in (0..4094 )) {$ERR="true"}
-            elseif ( ! ( $VLAN ) ) { $VLAN=0; $ERR = "true" }
-        }        
-        
-        if (! ( $GATEWAY ) ){
-            new-NetIPAddress -InterfaceAlias "${SHORTNAME}_${VNIC}" -AddressFamily IPv4 -IPAddress $IPADD -PrefixLength $NETMASK | Out-Null
-            }
-        else {
-            new-NetIPAddress -InterfaceAlias "${SHORTNAME}_${VNIC}" -AddressFamily IPv4 -IPAddress $IPADD -PrefixLength $NETMASK -DefaultGateway $GATEWAY | Out-Null
-            }
-        Set-VMNetworkAdapterVlan -VMNetworkAdapterName "${SHORTNAME}_${VNIC}" -VlanID ${VLAN} -ManagementOS -Access
-    }
+    createvNic
 
 
 
-
-
+######################################################
 # NEW VNIC
+######################################################
     $ANSWER = read-host -p "Do you want to create a new virtual interface for this switch [y/N]"
     if ( $ANSWER -eq "y" ) {
-    write-host "Existing virtual interface associated to this switch"
-    Get-VMNetworkAdapter -ManagementOS -SwitchName $SWITCHNAME | select Name| ft
+        write-host "Existing virtual interface associated to this switch"
+        Get-VMNetworkAdapter -ManagementOS -SwitchName $SWITCHNAME | select Name| ft
 
-    $NEWVNIC=read-host -p "Please enter a name for this interface : ${SHORTNAME}_${VNIC}_xxxx  "
+        $NEWVNIC=read-host -p "Please enter a name for this interface : ${SHORTNAME}_${VNIC}_xxxx  "
     
-    if ( ! ( (Get-VMNetworkAdapter -ManagementOS -Name $NEWVNIC -ErrorAction SilentlyContinue ) ) ) { 
-        Add-VMNetworkAdapter -ManagementOS -Name "${NEWVNIC}" -SwitchName "$SWITCHNAME"
-        Rename-NetAdapter -name "vEthernet (${NEWVNIC})" -newname "${NEWVNIC}"
-        write-host "* Virtual interface ""${NEWVNIC}"" created"
-        }
-    else {
-        write-host "! Virtual interface ""${NEWVNIC}"" already exist"
-        }
-
-
-    $RESULT = (Get-NetIPAddress -InterfaceAlias "${NEWVNIC}" -AddressFamily IPv4 -ErrorAction SilentlyContinue)
-    $RESULT | Select-Object InterfaceAlias,IPAddress,PrefixLength | ft
-    $ANSWER=read-host -p "Do you want to change this IP address [y/N]"
-    if ( $ANSWER -eq "y" ) {
-        $ERR="false"
-        while ( $ERR -ne "true" ) {
-            $IPADD=Read-Host -p "Enter new IP address"
-            $ERR=checkip $IPADD
-            }
-
-        $ERR="false"
-        $SUBNET=0
-        while ( $ERR -ne "true" ) {
-            $NETMASK=Read-Host -p "Enter Netmask or Subnet"
-            if ( $NETMASK -in (1..32 )) {$ERR="true"}
-            elseif ( $ERR=checkip $NETMASK ) { $SUBNET=1 }
-            }
-            
-        if ( $RESULT.PrefixOrigin -eq "manual" ) { Remove-NetIPAddress -InterfaceIndex $RESULT.ifIndex -AddressFamily IPv4 -Confirm:$false | Out-Null }
-        if ( $SUBNET -eq 1 ) { $NETMASK=Sub2Net $NETMASK}
-
-        $ERR="false"
-        while ( $ERR -ne "true" ) {
-            Remove-Variable -Name GATEWAY -ErrorAction SilentlyContinue
-            $GATEWAY=Read-host -p "Enter Gateway [empty if no Gateway]"
-            if ($GATEWAY) { $ERR=checkip $GATEWAY }
-            else { $ERR = "true" }
-        }
-  
-        $ERR="false"      
-        while ( $ERR -ne "true" ) {
-            $VLAN=Read-Host -p "Enter VLANID [Empty if no VLAN]"
-            if ( $VLAN -in (0..4094 )) {$ERR="true"}
-            elseif ( ! ( $VLAN ) ) { $VLAN=0; $ERR = "true" }
-        }    
-        if (! ( $GATEWAY ) ){
-            new-NetIPAddress -InterfaceAlias "${NEWVNIC}" -AddressFamily IPv4 -IPAddress $IPADD -PrefixLength $NETMASK | Out-Null
+        if ( ! ( (Get-VMNetworkAdapter -ManagementOS -Name $NEWVNIC -ErrorAction SilentlyContinue ) ) ) { 
+            Add-VMNetworkAdapter -ManagementOS -Name "${NEWVNIC}" -SwitchName "$SWITCHNAME"
+            Rename-NetAdapter -name "vEthernet (${NEWVNIC})" -newname "${NEWVNIC}"
+            write-host "* Virtual interface ""${NEWVNIC}"" created"
             }
         else {
-            new-NetIPAddress -InterfaceAlias "${NEWVNIC}" -AddressFamily IPv4 -IPAddress $IPADD -PrefixLength $NETMASK -DefaultGateway $GATEWAY | Out-Null
+            write-host "! Virtual interface ""${NEWVNIC}"" already exist"
             }
-        Set-VMNetworkAdapterVlan -VMNetworkAdapterName "${NEWVNIC}" -VlanID ${VLAN} -ManagementOS -Access
+    
+        createvNic
+        }
+
+
     }
-}
-
-
-}
 }
 
 
