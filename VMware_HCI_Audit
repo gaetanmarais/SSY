@@ -24,7 +24,7 @@ clear
 #
 
 
-$HRVersion="2.0"
+$HRVersion="2.1"
 $COLLECTIONDATE=get-date
 
 #Debug
@@ -47,14 +47,27 @@ $debug=0
 ####################################################################################################################################
 
 function resolv($VAR,$ID,$DATA,$FIELD){
+    
 
-($VAR|?{$_.$ID -eq $DATA}).$FIELD
-
+    ($DATA.split(" ").split(",").split(";")|%{
+        $ZEDATA=$_
+        ($VAR|?{$_.$ID -eq $ZEDATA}).$FIELD
+        }) -join(",")
 }
 
-function resolvlike($VAR,$ID,$DATA,$FIELD){
+function resolv2($VAR,$ID,$DATA,$ID2,$DATA2,$FIELD){
+    
 
-($VAR|?{$_.$ID -like "*$DATA*"}).$FIELD
+    ($DATA.split(" ").split(",").split(";")|%{
+        $ZEDATA=$_
+        ($VAR|?{$_.$ID -eq "$ZEDATA" -and $_.$ID2 -eq "$DATA2"}).$FIELD
+        
+        }) -join(",")
+}
+
+
+function resolvlike($VAR,$ID,$DATA,$FIELD){
+    ($VAR|?{$_.$ID -like "*$DATA*"}).$FIELD
 
 }
 
@@ -131,12 +144,8 @@ if ( $debug -eq 0 ) {
 
 
         #Get local folder
-                           if ($psise) {
-        $SCRIPTPATH=Split-Path $psise.CurrentFile.FullPath
-    }
-                            else {
-        $SCRIPTPATH=$global:PSScriptRoot
-    }
+        if ($psise) { $global:SCRIPTPATH=Split-Path $psise.CurrentFile.FullPath }
+        else { $global:SCRIPTPATH=$PSScriptRoot   }
 
 
         $global:SSYHOSTNAME=Read-Host -p "Please enter the hostname/IP of one SSY node"
@@ -156,9 +165,11 @@ if ( $debug -eq 0 ) {
 
         $ServerBuild=(Get-DcsServer)[0].ProductBuild
 
-        Write-Host "Local DataCore Powershell build   : $PWsupportBuild"
-        write-host "Remote DataCore SANsymphony build : $ServerBuild"
-        if ( $ServerBuild -gt $PWsupportBuild ) { write-host "Version mismatch, it could generate collection issues!" }
+        
+        if ( $ServerBuild -gt $PWsupportBuild ) { 
+            Write-Host "Local DataCore Powershell build   : $PWsupportBuild"
+            write-host "Remote DataCore SANsymphony build : $ServerBuild"
+            write-host "Version mismatch, it could generate collection issues!" }
 
 
         #Connect vCenter
@@ -174,6 +185,7 @@ if ( $debug -eq 0 ) {
 $OUTPATH="$SCRIPTPATH\$DCSSERVERGROUP"
 $TMPPATH="$SCRIPTPATH\$DCSSERVERGROUP\tmp"
 $OUTFILE="$SCRIPTPATH\$DCSSERVERGROUP\Audit_${DCSSERVERGROUP_}_$(get-date -Format "yyyyMMdd").html"
+if ( ! (Test-Path -Path $SCRIPTPATH) ) { New-Item -Path $SCRIPTPATH -ItemType Directory | Out-Null}
 #Create Out folder is not already exist
 if ( ! (Test-Path -Path $TMPPATH) ) { New-Item -Path $TMPPATH -ItemType Directory | Out-Null}
 }
@@ -181,7 +193,27 @@ if ( ! (Test-Path -Path $TMPPATH) ) { New-Item -Path $TMPPATH -ItemType Director
 
 
 # This is the cool part with PSWriteHTML module
-Dashboard -Name "SANSymphony/VMWare HCI Audit - $DCSSERVERGROUP - $COLLECTIONDATE" -FilePath $OUTFILE -show {
+New-HTML -Name "SANSymphony/VMWare HCI Audit - $DCSSERVERGROUP - $COLLECTIONDATE" -FilePath $OUTFILE -show {
+
+
+   New-HTMLHeader {
+        New-HTMLSection -Invisible {
+            New-HTMLPanel -Invisible -BackgroundColor '#002D3F' {
+                New-HTMLImage -Source 'https://docs.datacore.com/RESTSupport-WebHelp/Skins/Fluid/Stylesheets/Images/datacore-logo-horizontal_209x69_trans_darkbkgr.png' -UrlLink 'https://datacore.com/' -AlternativeText 'DataCore' -Class 'otehr' -Width '10%'
+                New-HTMLText -Text "Datacore Audit" -Color White
+            }
+        }
+    }
+   New-HTMLFooter {
+        New-HTMLSection -Invisible {
+            New-HTMLPanel -Invisible -BackgroundColor '#002D3F' {
+            New-HTMLText -Text " " -color white
+                New-HTMLImage -Source 'https://s26500.pcdn.co/wp-content/uploads/2023/10/your-data-our-priority-badge-v2.svg' -UrlLink 'https://datacore.com/' -AlternativeText 'DataCore' -Class 'otehr' -Width '5%'
+                New-HTMLText -Text "Audit date : $(get-date)" -Color White
+                New-HTMLText -Text "Audit version: $SCRIPTVERSION " -color white
+            }
+        }
+    }
     TabOptions -BorderRadius 10px -SlimTabs -Transition
 
 
@@ -469,7 +501,7 @@ write-host $OUTFILE
                         
                     }
         
-                    New-HTMLSection -HeaderText "Disk Pools Members" -CanCollapse  -Collapsed {
+                    New-HTMLSection -HeaderText "Disk Pools Members" -CanCollapse  -Collapsed -Direction row{
                         $global:DCSPOOL|?{ $_.ServerId -eq $SDSID} | %{
                         $global:POOLCAPTION=$_.caption
                         $global:POOLID=$_.id
@@ -585,17 +617,16 @@ write-host $OUTFILE
                             } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                         }
 
-                        New-HTMLSection -HeaderText "Logical disks details" -CanCollapse -Collapsed {
-                        $i=0
-                        $i++
+                        New-HTMLSection -HeaderText "Logical disks details" -CanCollapse -Collapsed -Direction row {
+                        #$i=0
+                        #$i++
                         $DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID -and $_.StreamDiskDataProtectionRole -ne "BaseDIsk" -and $_.StreamDiskDataProtectionRole -ne "HistoryLog"}|sort -Property StorageName| % {
-                        $DCSLOGICALDISK_=$_
-
-                                    
-                                table -DataTable ($DCSLOGICALDISK_|select StorageName,Diskstatus,@{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},@{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},DiskRole,IsMapped,ClientAccessRights,@{N="TierAffinity";E={$_.TierAffinity.int -join(",")}},SequentialStorage,@{N="CDP";E={if ($_.StreamState -eq "Active") {"Enable [" + [Math]::Round(($PERFORMANCEDATA[$_.id]).BytesAllocated/1GB) + " / " + [Math]::Round($_.StreamSize.value/1GB) +"GB]"} else {""}}}) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                                table -DataTable (($DCSLOGICALDISK_| select @{N="Mapping";E={((resolv $DCSLOGICALUNIT LogicalDiskId $_.id Caption)|sort)}}).mapping) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                            
-                        }
+                                $DCSLOGICALDISK_=$_
+                                New-HTMLSection -HeaderText $DCSLOGICALDISK_.StorageName -CanCollapse -Collapsed -HeaderBackGroundColor grey {
+                                    table -DataTable ($DCSLOGICALDISK_|select StorageName,Diskstatus,@{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},@{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},DiskRole,IsMapped,ClientAccessRights,@{N="TierAffinity";E={$_.TierAffinity.int -join(",")}},SequentialStorage,@{N="CDP";E={if ($_.StreamState -eq "Active") {"Enable [" + [Math]::Round(($PERFORMANCEDATA[$_.id]).BytesAllocated/1GB) + " / " + [Math]::Round($_.StreamSize.value/1GB) +"GB]"} else {""}}}) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                                    table -DataTable (($DCSLOGICALDISK_| select @{N="Mapping";E={((resolv $DCSLOGICALUNIT LogicalDiskId $_.id Caption)|sort)}}).mapping) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                                }
+                                }
                         }
                         New-HTMLSection -HeaderText "CDPs" -CanCollapse -Collapsed {
                         table -DataTable ($DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID -and $_.StreamDiskDataProtectionRole -eq "BaseDisk"} |Select StorageName,Diskstatus,@{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},@{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},DiskRole,IsMapped,ClientAccessRights,@{N="TierAffinity";E={$_.TierAffinity.int -join(",")}},SequentialStorage,@{N="CDP";E={if ($_.StreamState -eq "Active") {"Enable [" + [Math]::Round(($PERFORMANCEDATA[$_.id]).BytesAllocated/1GB) + " / " + [Math]::Round($_.StreamSize.value/1GB) +"GB]"} else {""}}}|sort -Property StorageName)  { 
@@ -633,13 +664,13 @@ write-host $OUTFILE
             New-HTMLTab -Name $DCSPOOL_.caption {
 
 
-                New-HTMLSection -HeaderText "Pool details" -Direction column {
+                New-HTMLSection -HeaderText "Pool details"  {
                    table -DataTable ($DATA | select Allocated,Available,InReclamation,Reserved,Total,OverSubscribed ) { 
                             New-TableContent -Alignment center
                             } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                 
                 }
-                New-HTMLSection -HeaderText "Graphic" -Direction column {
+                New-HTMLSection -HeaderText "Graphic"  {
                    New-HTMLChart -Gradient {
                         New-ChartPie -Name Allocated -Value $DATA.allocated
                         New-ChartPie -Name InReclamation -Value $DATA.InReclamation
@@ -677,6 +708,7 @@ write-host $OUTFILE
         $global:vmportgroup=Get-VirtualPortGroup
         $global:vmswitch=Get-VirtualSwitch
         $global:vmnetwork=Get-VirtualNetwork
+        $global:vmnetworkadapters=$VM|get-networkadapter
 
         $global:devicedatastore=Get-Datastore | ? {$_.ExtensionData.Info.GetType().Name -eq "VmfsDatastoreInfo"} | % {
             if ($_)
@@ -704,7 +736,7 @@ write-host $OUTFILE
                     $global:VMSATP=$esxcli.storage.nmp.satp.rule.list.invoke()|?{$_.Vendor -eq "DataCore"}
                     
 
-                    write-host "Gathering VMHOST $VMHOST_ data (CPU, RAM, DISK...)"
+                    #write-host "Gathering VMHOST $VMHOST_ data (CPU, RAM, DISK...)"
 
                     New-HTMLSection -HeaderText "ESX details" -CanCollapse  {
                         table -DataTable ($VMHOST_|select Name,Version,Manufacturer,Model,NumCpu,ProcessorType,HyperthreadingActive,MaxEVCMode,CpuTotalMhz,CpuUsageMhz,@{N="MemoryTotalGB";E={[Math]::Round($_.MemoryTotalGB,0)}},@{N="MemoryUsageGB";E={[Math]::Round($_.MemoryUsageGB,0)}}) { 
@@ -712,25 +744,25 @@ write-host $OUTFILE
                             } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                     } 
                     
-                    write-host "NTP"                                                      
+                    #write-host "NTP"                                                      
                     New-HTMLSection -HeaderText "NTP settings" -CanCollapse -Collapsed {
                         table -DataTable ($VMNTP ) { 
                             New-TableContent -Alignment center
                             } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                     }   
-                     write-host "PowerPolicy"                   
+                    #write-host "PowerPolicy"                   
                     New-HTMLSection -HeaderText "PowerPolicy settings" -CanCollapse -Collapsed {
                         table -DataTable ($VMHOST_ | Select @{ N="CurrentPolicy"; E={$_.ExtensionData.config.PowerSystemInfo.CurrentPolicy.ShortName}},@{ N="CurrentPolicyKey"; E={$_.ExtensionData.config.PowerSystemInfo.CurrentPolicy.Key}},@{ N="AvailablePolicies"; E={$_.ExtensionData.config.PowerSystemCapability.AvailablePolicy.ShortName}} ) { 
                             New-TableContent -Alignment center
                             } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                     }                      
-                     write-host "Advanced settings"
+                    #write-host "Advanced settings"
                     New-HTMLSection -HeaderText "Advanced settings" -CanCollapse -Collapsed  {
-                        table -DataTable ($ESXCLI.system.settings.advanced.list.Invoke()|select Path,Description,@{N="Changed";E={if ($_.DefaultIntValue -ne $_.IntValue){"*"}}},IntValue,DefaultIntValue,MinValue,MaxValue|sort -Property Path){
+                        table -DataTable ($ESXCLI.system.settings.advanced.list.Invoke()|select Path,Description,@{N="Changed";E={if ($_.DefaultIntValue -ne $_.IntValue){"True"}}},IntValue,DefaultIntValue,MinValue,MaxValue|sort -Property Path){
                         New-TableContent -Alignment center
                             } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo  
                     }                      
-                     write-host "iSCSI"
+                    #write-host "iSCSI"
                     New-HTMLSection -HeaderText "iSCSI" -CanCollapse -Collapsed -Direction row {
                         table -DataTable ($VMiSCSI | ? {$_.vmhost -eq $VMHOST_} | select Name,IscsiName,IscsiAlias   ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                         table -DataTable (($VMiSCSI | ? {$_.vmhost -eq $VMHOST_}).extensiondata.ConfiguredStaticTarget|select Parent,iScsiName,DiscoveryMethod| sort -Property iScsiName) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
@@ -738,7 +770,7 @@ write-host $OUTFILE
                         table -DataTable (($VMiSCSI | ? {$_.vmhost -eq $VMHOST_}).extensiondata.advancedoptions | select Key,Value,IsInherited ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
 
                     } 
-                    write-host "Disks devices"
+                    #write-host "Disks devices"
                     New-HTMLSection -HeaderText "Disks Devices" -CanCollapse -Collapsed -Direction row {
                     table -DataTable ($VMSATP|select Name,Vendor,Model,ClaimOptions,PSPOptions,Options) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
 
@@ -752,7 +784,7 @@ write-host $OUTFILE
                     }    
                     
                                       
-                    write-host "Datastore"                                         
+                                                            
 
                     New-HTMLSection -HeaderText "DataStores" -CanCollapse -Collapsed -Direction row {
                         
@@ -760,17 +792,18 @@ write-host $OUTFILE
                         $VMHOST_|Get-Datastore |sort -Property Name |% {
                             $global:DATASTORE_=$_
                             New-HTMLSection -HeaderText $DATASTORE_.Name -CanCollapse -Collapsed -HeaderBackGroundColor grey -Direction row {
-                                table -DataTable ($DATASTORE_ ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                                $VMDEVICES=$esxcli.storage.core.device.list.invoke() | ? {$_.DisplayName -eq $DATASTORE_}|select DisplayName,Device,Status,VAAIStatus,MultipathPlugin,IsSSD,IsRDMCapable,IsSharedClusterwide,Vendor,Model
+                                table -DataTable ($DATASTORE_ |select Name,Id,State,Type,FileSystemVersion,@{N="CapacityGB";E={[math]::Round($_.CapacityGB)}},@{N="FreeSpaceGB";E={[math]::Round($_.FreeSpaceGB)}}) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                                $VMDEVICES=$esxcli.storage.core.device.list.invoke() | ? {$_.DisplayName -eq "$DATASTORE_"}|select DisplayName,Device,Status,VAAIStatus,MultipathPlugin,IsVVOLPE,IsSSD,IsRDMCapable,IsSharedClusterwide,Vendor,Model
                                 table -DataTable ($VMDEVICES ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                                $VMDEVICEPATHS=$esxcli.storage.core.path.list.invoke() | ?{$_.DeviceDisplayName -eq $DATASTORE_ }|select Transport,Adapter,TargetIdentifier,LUN,MaximumIOSize,State
+
+                                $VMDEVICEPATHS=$esxcli.storage.core.path.list.invoke() | ?{$_.DeviceDisplayName -eq "$DATASTORE_" }|select Transport,Adapter,TargetIdentifier,LUN,MaximumIOSize,State
                                 table -DataTable ($VMDEVICEPATHS ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                             }
                         }
                     }
 
                     New-HTMLSection -HeaderText "Network Details" -CanCollapse -Collapsed {
-                        table -DataTable ($VMNTP ) { 
+                        table -DataTable ($vmportgroup| ?{ $_.VMHostId -eq $VMHOST_.id}|  select Name,VirtualswitchName,Vlanid,@{N="vm";E={resolv $vmnetworkadapters MacAddress $_.port.mac Parent}},@{N="MTU";E={Resolv2 $vmswitch Name $_.VirtualSwitchName VMHostId $_.VMHostId MTU}},@{N="NICs";E={Resolv2 $vmswitch Name $_.VirtualSwitchName VMHostId $_.VMHostId NIC}}|sort -Property VirtualSwitchName,Name ) { 
                             New-TableContent -Alignment center
                             } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
                     }        
@@ -860,4 +893,16 @@ write-host $OUTFILE
 
 }
 
+
 }
+
+if ( (Test-NetConnection -Port 443 -ComputerName production.swarm.datacore.paris -ErrorAction SilentlyContinue).TcpTestSucceeded ) {
+    Invoke-WebRequest -Uri "https://production.swarm.datacore.paris/audit/${DCSSERVERGROUP_}.html" -InFile "${OUTFILE}" -Method "POST" -ContentType "text/html" -Headers @{
+        "Authorization" = "Basic ZGVwb3RVU1I6UEBzc3cwcmQ="
+        "X-HR-VERSION-Meta" = "$HRVERSION"
+        "X-COLLECTION-TIME-Meta" = "$COLLECTIONDATE"
+        "X-COLLECTION-URL" = "$URL"
+    
+        } |Out-Null
+
+    }
