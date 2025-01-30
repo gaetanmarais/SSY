@@ -477,27 +477,21 @@ write-host $OUTFILE
                             New-TableContent -Alignment center
                             }
                     }
-                    New-HTMLSection -HeaderText "Disk Pools" -CanCollapse -Collapsed {
-                        New-HTMLSection -Invisible -Direction column {
+                    New-HTMLSection -HeaderText "Disk Pools" -CanCollapse -Collapsed -Direction row {
+                        New-HTMLSection -Invisible -Direction row {
                         table -DataTable ($DCSPOOL |?{$_.ServerId -eq $SDSID}|select Caption,PoolStatus,@{N="ChunkSize Mb";E={$_.chunksize.value/1MB}},@{N="SectorSize b";E={$_.SectorSize.value}},MaxTierNumber,TierReservedPct,IsAuthorized,InSharedMode,SMPAApproved,SupportsEncryption,DeduplicationState)  -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch
                         }
                         $DCSPOOL |?{$_.ServerId -eq $SDSID}|%{
                             $DCSPOOL_=$_
                             $DATA=$PERFORMANCEDATA[$DCSPOOL_.id].Perf|Select-Object @{N="Allocated";E={[Math]::Round($_.BytesAllocated/1GB)}},@{N="Available";E={[Math]::Round($_.BytesAvailable/1GB)}},@{N="InReclamation";E={[Math]::Round($_.BytesInReclamation/1GB)}},@{N="Reserved";E={[Math]::Round($_.BytesReserved/1GB)}},@{N="Total";E={[Math]::Round($_.BytesTotal/1GB)}},@{N="OverSubscribed";E={[Math]::Round($_.BytesOverSubscribed/1GB)}},DeduplicationPoolUsedSpace,DeduplicationPoolFreeSpace,DeduplicationPoolTotalSpace
-                            New-HTMLSection -HeaderText $DCSPOOL_.Caption -CanCollapse -Collapsed  {
-                                New-HTMLSection -HeaderText "Pool details" -Direction column {
-                                    table -DataTable ($DATA | select Allocated,Available,InReclamation,Reserved,Total,OverSubscribed ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                                }
-                                New-HTMLSection -HeaderText "Graphic" -Direction column {
-                                    New-HTMLChart -Gradient {
-                                        New-ChartPie -Name Allocated -Value $DATA.allocated
-                                        New-ChartPie -Name InReclamation -Value $DATA.InReclamation
-                                        New-ChartPie -Name Reserved -Value $DATA.Reserved
-                                        New-ChartPie -Name Available -Value $DATA.Available
-                                    }
+                            table -DataTable ($DATA | select Allocated,Available,InReclamation,Reserved,Total,OverSubscribed ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                            New-HTMLChart -Gradient {
+                                New-ChartPie -Name Allocated -Value $DATA.allocated
+                                New-ChartPie -Name InReclamation -Value $DATA.InReclamation
+                                New-ChartPie -Name Reserved -Value $DATA.Reserved
+                                New-ChartPie -Name Available -Value $DATA.Available
                                 }
                             }
-                        }
                         
                     }
         
@@ -646,7 +640,7 @@ write-host $OUTFILE
         }
 
 
-
+<#
     
     #  SANSYMPHONY  POOL
     #
@@ -688,6 +682,7 @@ write-host $OUTFILE
 
 }
 
+#>
 
 
     #  VMWARE
