@@ -24,7 +24,7 @@ clear
 #
 
 
-$HRVersion="2.1"
+$HRVersion="2.2"
 $COLLECTIONDATE=get-date
 
 #Debug
@@ -32,7 +32,7 @@ $COLLECTIONDATE=get-date
 #  1 No connect to SSY and VCENTER but gather data
 #  2 No connect and no gather data
 
-$debug=2
+$debug=0
 
 
 
@@ -73,11 +73,13 @@ function resolvlike($VAR,$ID,$DATA,$FIELD){
 }
 
 
-function zeTable ($VALUES) {
-
+function zeTable ($VALUES,$PARAMS) {
+      
     New-HTMLTable -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch -DataTable ($VALUES){
         New-TableContent -Alignment center
-    }
+        New-HTMLTableStyle -FontFamily 'Calibri' -BackgroundColor LightCyan -TextColor black -Type RowOdd
+        New-HTMLTableStyle -FontFamily 'Calibri' -BackgroundColor White -TextColor black -Type RowEven
+        }
 
 }
 
@@ -197,6 +199,8 @@ if ( $debug -eq 0 ) {
     }
 
 
+write-host "Data gathering started, please be patient, Graphs collections could take some time ;) " -ForegroundColor Yellow 
+
 #create OUT folders
 $OUTPATH="$SCRIPTPATH\$DCSSERVERGROUP"
 $TMPPATH="$SCRIPTPATH\$DCSSERVERGROUP\tmp"
@@ -213,10 +217,10 @@ New-HTML -Name "SANSymphony/VMWare HCI Audit - $DCSSERVERGROUP - $COLLECTIONDATE
 
 
    New-HTMLHeader {
-        New-HTMLSection -Invisible {
+        New-HTMLSection -Invisible -Direction column {
             New-HTMLPanel -Invisible -BackgroundColor '#002D3F' {
                 New-HTMLImage -Source 'https://docs.datacore.com/RESTSupport-WebHelp/Skins/Fluid/Stylesheets/Images/datacore-logo-horizontal_209x69_trans_darkbkgr.png' -UrlLink 'https://datacore.com/' -AlternativeText 'DataCore' -Class 'otehr' -Width '10%'
-                New-HTMLText -Text "Datacore Audit" -Color White
+                New-HTMLText -Text "Datacore Audit : $DCSSERVERGROUP" -Color White -FontSize 20
             }
         }
     }
@@ -484,7 +488,7 @@ write-host $OUTFILE
                     Copy-VMGuestFile -GuestToLocal -Source $output.ScriptOutput.trim() -Destination $TMPPATH -VM $SDS -Force -GuestCredential $SSYCREDENTIAL
                     }
                 }
-                New-HTMLTab -Name "$SDS" {
+                New-HTMLTab -Name "$SDS" -TextTransform capitalize {
                 
                     New-HTMLSection -HeaderText "DataCore server details" -CanCollapse  {
                         zeTable ($DCSSERVER |?{$_.caption -eq $SDS}|select Caption,hostname,isVirtualMachine,PowerState,CacheState,IsLicensed,NextExpirationDate,ProductBuild,ProductVersion,State,GroupId) 
@@ -651,32 +655,26 @@ write-host $OUTFILE
                 New-HTMLTab -Name "Connected Hosts to $SDS" {
 
                         New-HTMLSection -HeaderText "VMware Hosts" -CanCollapse  {
-                        table -DataTable ($DCSVIMHOST|select caption,
+                            zetable $($DCSVIMHOST|select caption,
                             Hostname,
                             Description,
                             PathPolicy,
-                            ConnectionState ) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                        }
+                            ConnectionState ) 
+                            }
 
                         New-HTMLSection -HeaderText "Others Hosts" -CanCollapse  {
-                        table -DataTable ($DCSCLIENT|select caption,
+                            zetable $($DCSCLIENT|select caption,
                             Hostname,
                             Description,
                             PathPolicy,
                             State,
                             type,
                             MpioCapable,
-                            AluaSupport ) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                        }
+                            AluaSupport )
+                            }
 
                         New-HTMLSection -HeaderText "iSCSI sessions" -CanCollapse -Collapsed {
-                        table -DataTable ($DCSOBJECTMODEL.DataRepository.iScsiSessionData | ? { ! $_.PortBDescriptor -and $_.PortAId -in $($DCSSERVERPORT|?{$_.hostid -eq $SDSID}).id} |select Caption,connected | sort ) { 
-                            New-TableContent -Alignment center
-                            } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                        zetable $($DCSOBJECTMODEL.DataRepository.iScsiSessionData | ? { ! $_.PortBDescriptor -and $_.PortAId -in $($DCSSERVERPORT|?{$_.hostid -eq $SDSID}).id} |select Caption,connected | sort )
                         }
 
                         
@@ -684,7 +682,7 @@ write-host $OUTFILE
                 New-HTMLTab -Name "vDisks $SDS" {
 
                         New-HTMLSection -HeaderText "Vdisks" -CanCollapse -Collapsed  {
-                        table -DataTable ($DCSVDISK|select Caption,
+                        zetable $($DCSVDISK|select Caption,
                             DiskStatus,
                             @{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},
                             @{N="Allocated Gb";E={[Math]::Round($PERFORMANCEDATA[$_.id].perf.BytesAllocated/1Gb)}},
@@ -703,10 +701,8 @@ write-host $OUTFILE
                             DeduplicationEnabled,
                             StaleDataEnabled,
                             StaleDataWeight|
-                            sort Caption,FirstHost ) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                        }
+                            sort Caption,FirstHost ) 
+                            }
 
                         New-HTMLSection -HeaderText "Logical disks details" -CanCollapse -Collapsed -Direction row {
                         #$i=0
@@ -714,7 +710,7 @@ write-host $OUTFILE
                         $DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID  -and $_.StreamDiskDataProtectionRole -ne "HistoryLog"}|sort -Property StorageName| % {
                                 $global:DCSLOGICALDISK_=$_
                                 New-HTMLSection -HeaderText $DCSLOGICALDISK_.StorageName -CanCollapse -Collapsed -HeaderBackGroundColor grey {
-                                    table -DataTable ($DCSLOGICALDISK_|select StorageName,
+                                    zetable $($DCSLOGICALDISK_|select StorageName,
                                         Diskstatus,
                                         @{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},
                                         @{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},
@@ -722,13 +718,13 @@ write-host $OUTFILE
                                         @{N="TierAffinity";E={$_.TierAffinity.int -join(",")}},
                                         SequentialStorage,
                                         @{N="CDP";E={if ($_.StreamState -eq "Active") {"true"} else {"false"}}}
-                                        ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                                    table -DataTable (($DCSLOGICALDISK_| select @{N="Mapping";E={((resolv $DCSLOGICALUNIT LogicalDiskId $_.id Caption)|sort)}}).mapping -split(",")) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                                }
+                                        ) 
+                                    zetable $(($DCSLOGICALDISK_| select @{N="Mapping";E={((resolv $DCSLOGICALUNIT LogicalDiskId $_.id Caption)|sort)}}).mapping -split(",")) 
+                                    }
                                 }
                         }
                         New-HTMLSection -HeaderText "CDPs" -CanCollapse -Collapsed {
-                        table -DataTable ($DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID -and $_.StreamDiskDataProtectionRole -in @("BaseDisk")} |Select StorageName,
+                        zetable $($DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID -and $_.StreamDiskDataProtectionRole -in @("BaseDisk")} |Select StorageName,
                             @{N="Type";E={$result=(resolv $dcsrollback DestinationLogicalDiskId $_.ID AutoExpire) ; if ( ! $result ) {""} elseif ( $result -eq "true") {"Expired"} else {"Persistent"} }},
                             Diskstatus,
                             @{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},@{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},
@@ -744,22 +740,18 @@ write-host $OUTFILE
                                 else
                                     {resolv $dcsrollback DestinationLogicalDiskId $_.ID RestorePoint }
                                     }}|
-                            sort -Property StorageName)  { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                            sort -Property StorageName)  
                             }
 
                         New-HTMLSection -HeaderText "Snapshots" -CanCollapse -Collapsed {
-                        table -DataTable ($DCSSNAPSHOT|select @{N="Vdisk";E={Resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId StorageName }},
+                        zetable $($DCSSNAPSHOT|select @{N="Vdisk";E={Resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId StorageName }},
                             Caption,@{N="Pool";E={resolv $DCSPOOL ID (resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId PoolId) Caption}},
                             Type,
                             State,
                             CompressionEnabled,
                             @{N="MigrationPercentage";E={$PERFORMANCEDATA[$_.ID].perf.MigrationPercentage}},
                             @{N="DifferencePercentage";E={$PERFORMANCEDATA[$_.ID].perf.DifferencePercentage}},
-                            @{N="GBMigrated";E={($PERFORMANCEDATA[$_.ID].perf.TotalBytesMigrated)/1GB}} | sort ) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                            @{N="GBMigrated";E={($PERFORMANCEDATA[$_.ID].perf.TotalBytesMigrated)/1GB}} | sort ) 
                             }
                         
                 }
@@ -823,7 +815,7 @@ write-host $OUTFILE
                     #write-host "Gathering VMHOST $VMHOST_ data (CPU, RAM, DISK...)"
 
                     New-HTMLSection -HeaderText "ESX details" -CanCollapse  {
-                        table -DataTable ($VMHOST_|select Name,
+                        zetable $($VMHOST_|select Name,
                             Version,
                             Manufacturer,
                             Model,
@@ -834,53 +826,48 @@ write-host $OUTFILE
                             CpuTotalMhz,
                             CpuUsageMhz,
                             @{N="MemoryTotalGB";E={[Math]::Round($_.MemoryTotalGB,0)}},
-                            @{N="MemoryUsageGB";E={[Math]::Round($_.MemoryUsageGB,0)}}) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                            @{N="MemoryUsageGB";E={[Math]::Round($_.MemoryUsageGB,0)}}) 
                         } 
                     
                     #write-host "NTP"                                                      
-                    New-HTMLSection -HeaderText "NTP settings" -CanCollapse -Collapsed {
-                        table -DataTable ($VMNTP ) { 
-                            New-TableContent -Alignment center
-                            } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                    }   
+                    New-HTMLSection -HeaderText "NTP settings" -CanCollapse -Collapsed { zetable $($VMNTP ) }
+                    
+                       
                     #write-host "PowerPolicy"                   
                     New-HTMLSection -HeaderText "PowerPolicy settings" -CanCollapse -Collapsed {
-                        table -DataTable ($VMHOST_ | Select @{ N="CurrentPolicy"; E={$_.ExtensionData.config.PowerSystemInfo.CurrentPolicy.ShortName}},
+                        zetable $($VMHOST_ | Select @{ N="CurrentPolicy"; E={$_.ExtensionData.config.PowerSystemInfo.CurrentPolicy.ShortName}},
                             @{ N="CurrentPolicyKey"; E={$_.ExtensionData.config.PowerSystemInfo.CurrentPolicy.Key}},
-                            @{ N="AvailablePolicies"; E={$_.ExtensionData.config.PowerSystemCapability.AvailablePolicy.ShortName}} ) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                    }                      
+                            @{ N="AvailablePolicies"; E={$_.ExtensionData.config.PowerSystemCapability.AvailablePolicy.ShortName}} )
+                        }     
+                        
+                                         
                     #write-host "Advanced settings"
                     New-HTMLSection -HeaderText "Advanced settings" -CanCollapse -Collapsed  {
-                        table -DataTable ($ESXCLI.system.settings.advanced.list.Invoke()|select Path,
+                        zetable $($ESXCLI.system.settings.advanced.list.Invoke()|select Path,
                             Description,
                             @{N="Changed";E={if ($_.DefaultIntValue -ne $_.IntValue){"True"}}},
                             IntValue,
                             DefaultIntValue,
                             MinValue,
-                            MaxValue|sort -Property Path){
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo  
-                        }                      
+                            MaxValue|sort -Property Path) 
+                        }
+                        
+                                              
                     #write-host "iSCSI"
                     New-HTMLSection -HeaderText "iSCSI" -CanCollapse -Collapsed -Direction row {
-                        table -DataTable ($VMiSCSI | ? {$_.vmhost -eq $VMHOST_} | select Name,IscsiName,IscsiAlias   ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                        table -DataTable (($VMiSCSI | ? {$_.vmhost -eq $VMHOST_}).extensiondata.ConfiguredStaticTarget|select Parent,iScsiName,DiscoveryMethod| sort -Property iScsiName) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                        
-                        table -DataTable (($VMiSCSI | ? {$_.vmhost -eq $VMHOST_}).extensiondata.advancedoptions | select Key,Value,IsInherited ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-
-                    } 
+                        zetable $($VMiSCSI | ? {$_.vmhost -eq $VMHOST_} | select Name,IscsiName,IscsiAlias   ) 
+                        zetable $(($VMiSCSI | ? {$_.vmhost -eq $VMHOST_}).extensiondata.ConfiguredStaticTarget|select Parent,iScsiName,DiscoveryMethod| sort -Property iScsiName)  
+                        zetable $(($VMiSCSI | ? {$_.vmhost -eq $VMHOST_}).extensiondata.advancedoptions | select Key,Value,IsInherited ) 
+                        }
+                         
                     #write-host "Disks devices"
                     New-HTMLSection -HeaderText "Disks Devices" -CanCollapse -Collapsed -Direction row {
-                    table -DataTable ($VMSATP|select Name,Vendor,Model,ClaimOptions,PSPOptions,Options) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                        zetable $($VMSATP|select Name,Vendor,Model,ClaimOptions,PSPOptions,Options) 
 
                         $Devices|?{$_.vmhost -eq $VMHOST_}|sort|% {
                             $devices_=$_
                             New-HTMLSection -HeaderText "$_.CanonicalName ($(resolv $devicedatastore Diskname $_.CanonicalName name))" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
-                                table -DataTable ($Devices_ | Select-Object VMhost,
+                                zetable $($Devices_ | Select-Object VMhost,
                                     RuntimeName,
                                     CanonicalName,
                                     @{N="DataStore";E={resolv $devicedatastore Diskname $_.CanonicalName name}},
@@ -891,13 +878,13 @@ write-host $OUTFILE
                                     CommandsToSwitchPath,
                                     BlocksToSwitchPath,
                                     IsLocal,
-                                    IsSSD ) {} -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                                table -DataTable ($devicespaths |? {$_.ScsiLunId -eq $devices_.id}| Select-Object Name,
+                                    IsSSD ) 
+                                zetable $($devicespaths |? {$_.ScsiLunId -eq $devices_.id}| Select-Object Name,
                                     SanId,
                                     State,
                                     @{N="IsWorking";E={$_.extensiondata.isworkingpath}},
-                                    Prefered | sort -Property State,SanId ) {} -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                            }
+                                    Prefered | sort -Property State,SanId )
+                                    }
                         }
                     }    
                     
@@ -906,46 +893,64 @@ write-host $OUTFILE
 
                     New-HTMLSection -HeaderText "DataStores" -CanCollapse -Collapsed -Direction row {
                         
-                        table -DataTable ($VMSATP ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                        zetable $($VMSATP )  
                         $VMHOST_|Get-Datastore |sort -Property Name |% {
                             $global:DATASTORE_=$_
                             New-HTMLSection -HeaderText $DATASTORE_.Name -CanCollapse -Collapsed -HeaderBackGroundColor grey -Direction row {
-                                table -DataTable ($DATASTORE_ |select Name,
+                                zetable $($DATASTORE_ |select Name,
                                     Id,
                                     State,
                                     Type,
                                     FileSystemVersion,
                                     @{N="CapacityGB";E={[math]::Round($_.CapacityGB)}},
-                                    @{N="FreeSpaceGB";E={[math]::Round($_.FreeSpaceGB)}}) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                                    @{N="FreeSpaceGB";E={[math]::Round($_.FreeSpaceGB)}}) 
+                                
                                 $VMDEVICES=$esxcli.storage.core.device.list.invoke() | ? {$_.DisplayName -eq "$DATASTORE_"}|select DisplayName,Device,Status,VAAIStatus,MultipathPlugin,IsVVOLPE,IsSSD,IsRDMCapable,IsSharedClusterwide,Vendor,Model
-                                table -DataTable ($VMDEVICES ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                                zetable $($VMDEVICES ) 
 
                                 $VMDEVICEPATHS=$esxcli.storage.core.path.list.invoke() | ?{$_.DeviceDisplayName -eq "$DATASTORE_" }|select Transport,Adapter,TargetIdentifier,LUN,MaximumIOSize,State
-                                table -DataTable ($VMDEVICEPATHS ) -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
+                                zetable $($VMDEVICEPATHS ) 
                             }
                         }
                     }
 
                     New-HTMLSection -HeaderText "Network Details" -CanCollapse -Collapsed {
-                        table -DataTable ($vmportgroup| ?{ $_.VMHostId -eq $VMHOST_.id}|  select Name,
+                        zetable $($vmportgroup| ?{ $_.VMHostId -eq $VMHOST_.id}|  select Name,
                             VirtualswitchName,
                             Vlanid,
                             @{N="vm";E={resolv $vmnetworkadapters MacAddress $_.port.mac Parent}},
                             @{N="MTU";E={Resolv2 $vmswitch Name $_.VirtualSwitchName VMHostId $_.VMHostId MTU}},
-                            @{N="NICs";E={Resolv2 $vmswitch Name $_.VirtualSwitchName VMHostId $_.VMHostId NIC}}|sort -Property VirtualSwitchName,Name ) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch 
-                        }        
+                            @{N="NICs";E={Resolv2 $vmswitch Name $_.VirtualSwitchName VMHostId $_.VMHostId NIC}}|sort -Property VirtualSwitchName,Name ) 
+                            }        
+
                     New-HTMLSection -HeaderText "Vibs" -CanCollapse -Collapsed {
-                        table -DataTable ($esxcli.software.vib.list.invoke()|select Name,
+                        zetable $($esxcli.software.vib.list.invoke()|select Name,
                             Vendor,
                             Version,
                             CreationDate,
                             InstallDate,
-                            AcceptanceLevel|sort -Property InstallDate -Descending ) { 
-                                New-TableContent -Alignment center
-                                } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo 
-                        }                                                                     
+                            AcceptanceLevel|sort -Property InstallDate -Descending )  
+                        } 
+                        
+                        
+                    New-HTMLSection -HeaderText "Graphs" -CanCollapse -Collapsed -Direction row {     
+                        
+                        $statsType=@("cpu.usage.average","cpu.ready.summation","mem.usage.average","mem.overhead.average")
+                       
+                        $stats = Get-Stat -Entity $VMHOST_ -start (get-date).AddDays(-7) -Finish (Get-Date) -MaxSamples 1000 -stat $statsType                    
+                        $statsType | % {
+                            $stattype=$_
+                            $data = $stats|?{$_.metricId -eq $stattype}
+
+                                New-HTMLChart -Title $stattype -TitleAlignment center {
+                                    New-ChartAxisX -Name $data.TimeStamp
+                                    New-ChartLine -Name ($data.unit | select -Unique)  -Value $data.Value -Color blue -Cap square -Width 0
+                                }
+                        }
+                    }    
+                    
+                    
+                                                                                        
                }
             }
 
@@ -962,16 +967,16 @@ write-host $OUTFILE
                 $VMPASSTHROUGH=Get-PassthroughDevice -VM $SDSVM -ErrorAction SilentlyContinue |select Name,State,VendorName |Out-Null
                 New-HTMLTab -Name $SDSVM.Name {
                     New-HTMLSection -HeaderText "DataCore server details" {
-                        New-HTMLTable -DataTable $VMDATA -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch -AutoSize -ScrollX
+                        zetable $VMDATA
                     }
                     New-HTMLSection -HeaderText "DataCore server Networking" -CanCollapse -Collapsed {
-                        New-HTMLTable -DataTable $VMNETWORK -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch
+                        zetable $VMNETWORK
                     }
                     New-HTMLSection -HeaderText "DataCore server Storage" -CanCollapse -Collapsed  {
-                        New-HTMLTable -DataTable $VMHARDDISK -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch
+                        zetable $VMHARDDISK
                     }
                     New-HTMLSection -HeaderText "DataCore server Passtrough" -CanCollapse -Collapsed  {
-                        New-HTMLTable -DataTable $VMPASSTHROUGH  -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DisableSearch
+                        zetable $VMPASSTHROUGH
                     }                      
                 }
           }
@@ -984,7 +989,7 @@ write-host $OUTFILE
 
                 New-HTMLTab -Name "Datastore details" {
                     New-HTMLSection -HeaderText "Datastore details" -CanCollapse  {
-                        New-HTMLTable -DataTable ($datastore|select Name,
+                        zetable $($datastore|select Name,
                             Type,
                             FileSystemVersion,
                             @{N="Capacity";E={[math]::Round($_.CapacityGB)}},
@@ -993,7 +998,7 @@ write-host $OUTFILE
                             Accessible,
                             State,
                             @{N="Hosts";E={($_.ExtensionData.Host.key.value|%{resolvlike $VMHOST ID $_ name}|sort) -join(" ")}},
-                            StorageIOControlEnabled|sort -Property Name) -DisableInfo -DisableButtons -DisableSearch
+                            StorageIOControlEnabled|sort -Property Name)
                     }  
                 }
     
@@ -1002,11 +1007,17 @@ write-host $OUTFILE
         # VMware VMs
         ####################################################
 
-            New-HTMLTab -Name "VMs details" {
-   
 
-            New-HTMLSection -Name "VM details" -CanCollapse -Collapsed -Direction row {
-                table -DataTable  ($VM | sort -Property Name | Select-Object Name,
+        
+        $statsType=@("cpu.usage.average","cpu.ready.summation","mem.usage.average","disk.usage.average","disk.maxTotalLatency.latest")
+
+        New-HTMLTab -Name "VMs details" {
+         $VM|sort -Property name |%{
+            $VM_=$_
+
+
+            New-HTMLSection -Name $VM_.Name -CanCollapse -Collapsed -Direction row {
+                zetable $($VM_ | Select-Object Name,
                     PowerState,
                     @{N="AutoStart";E={($_|Get-VMStartPolicy).startaction}},
                     NumCPU,
@@ -1026,22 +1037,22 @@ write-host $OUTFILE
                     @{N="ToolsVersionStatus";E={$_.ExtensionData.Guest.ToolsVersionStatus}},
                     @{N="ToolsVersion";E={$_.ExtensionData.Guest.ToolsVersion}},
                     @{N="HwVersion";E={$_.ExtensionData.Guest.HwVersion}},
-                    TriggeredAlarmState) { 
-                        New-TableContent -Alignment center
-                        } -DisablePaging -DisableOrdering -HideFooter -HideButtons -DisableInfo -DataTableID "VMDetails"
+                    TriggeredAlarmState)
+
+                $stats = Get-Stat -Entity $VM_ -start (get-date).AddDays(-7) -Finish (Get-Date) -MaxSamples 1000 -stat $statsType                    
+                $statsType | % {
+                    $stattype=$_
+                    $data = $stats|?{$_.metricId -eq $stattype}
+
+                        New-HTMLChart -Title $stattype -TitleAlignment center {
+                            New-ChartAxisX -Name $data.TimeStamp
+                            New-ChartLine -Name ($data.unit | select -Unique)  -Value $data.Value -Color blue -Cap square -Width 0
+                        }
                     }
-
-            
-
-            New-HTMLSection -name "VM Config files" -CanCollapse -Collapsed -Direction row {
-                $VM |sort -Property Name |%{
-                    $VM_=$_
-                    New-HTMLSection -name "$VM_ VMx config file" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
-                        Table -DataTable ( $VM_.ExtensionData.config.extraConfig ) -DisablePaging -DisableOrdering -DisableInfo -DisableProcessing -DisableSelect -ScrollY 
-                    }
-
-                }   
+                zeTable $( $VM_.ExtensionData.config.extraConfig ) 
+                }
             }
+
 
 
 
