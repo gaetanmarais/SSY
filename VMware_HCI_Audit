@@ -600,8 +600,8 @@ write-host $OUTFILE
     ###############################################################
     write-host "SANsymphony section"
     Tab -Name "SANsymphony" -IconSolid check-circle  {
-        New-HTMLTabPanelColor -BackgrounColor '#002D3F'
-        New-HTMLTabPanel -Orientation vertical -TransitionAnimation slide-vertical  { 
+       # New-HTMLTabPanelColor -BackgrounColor '#002D3F'
+        New-HTMLTabPanel -Orientation vertical -TransitionAnimation fade -Theme brick { 
         $DCSSERVER|sort -Property Caption|%{
             $global:DCSSERVER_=$_
             $global:SDS=$DCSSERVER_.caption
@@ -616,7 +616,7 @@ write-host $OUTFILE
                     Copy-VMGuestFile -GuestToLocal -Source $output.ScriptOutput.trim() -Destination $TMPPATH -VM $SDS -Force -GuestCredential $SSYCREDENTIAL
                     }
                 }
-                New-HTMLTab -Name "$SDS" -TextTransform capitalize {
+                New-HTMLTab -Name "$SDS" -TextTransform capitalize -TextSize 20  {
                 
                     New-HTMLSection -HeaderText "DataCore server details" -CanCollapse  {
                         zeTable ($DCSSERVER |?{$_.caption -eq $SDS}|select Caption,hostname,isVirtualMachine,PowerState,CacheState,IsLicensed,NextExpirationDate,ProductBuild,ProductVersion,State,GroupId) 
@@ -780,7 +780,7 @@ write-host $OUTFILE
                             }
                     }                      
                 }
-                New-HTMLTab -Name "Connected Hosts to $SDS" {
+                New-HTMLTab -Name "Connected Hosts to $SDS" -TextTransform capitalize  -TextSize 20 {
 
                         New-HTMLSection -HeaderText "VMware Hosts" -CanCollapse  {
                             zetable $($DCSVIMHOST|select caption,
@@ -807,7 +807,7 @@ write-host $OUTFILE
 
                         
                 }
-                New-HTMLTab -Name "vDisks $SDS" {
+                New-HTMLTab -Name "vDisks $SDS" -TextTransform capitalize   -TextSize 20 {
 
                         New-HTMLSection -HeaderText "Vdisks" -CanCollapse -Collapsed  {
                         zetable $($DCSVDISK|select Caption,
@@ -897,7 +897,8 @@ write-host $OUTFILE
     if ( ${DCSVCENTERHOSTNAME} ) {
     write-host "VMware section"            
     Tab -Name "VMware" -IconSolid check-circle {
-        New-HTMLTabPanel -Orientation vertical -TransitionAnimation slide-vertical   { 
+    
+        New-HTMLTabPanel -Orientation vertical -TransitionAnimation fade -Theme brick   { 
         $global:VMHOST=get-vmhost
         $global:VM=Get-VM
         $global:datastore=Get-Datastore
@@ -928,7 +929,7 @@ write-host $OUTFILE
             $VMHOST|sort|%{
                 $global:VMHOST_=$_
                 $global:VMHOSTNAME=$VMHOST_.name
-                New-HTMLTab -Name $VMHOST_.name {
+                New-HTMLTab -Name $VMHOST_.name -TextTransform capitalize   -TextSize 20 {
 
                     
                     $global:VMNTP=$VMHOST_ | Select-Object Name, 
@@ -1094,7 +1095,7 @@ write-host $OUTFILE
                 $VMNETWORK=Get-NetworkAdapter -vm $SDSVM| select Name,NetworkName,MacAddress,Type,ConnectionState
                 $VMHARDDISK=Get-HardDisk -vm $SDSVM | select Name,CapacityGB,DiskType,Persistence,StorageFormat,ScsiCanonicalName
                 $VMPASSTHROUGH=Get-PassthroughDevice -VM $SDSVM -ErrorAction SilentlyContinue |select Name,State,VendorName |Out-Null
-                New-HTMLTab -Name $SDSVM.Name {
+                New-HTMLTab -Name $SDSVM.Name -TextTransform capitalize   -TextSize 20 {
                     New-HTMLSection -HeaderText "DataCore server details" {
                         zetable $VMDATA
                     }
@@ -1116,7 +1117,7 @@ write-host $OUTFILE
         # VMware DataStores
         ####################################################
 
-                New-HTMLTab -Name "Datastore details" {
+                New-HTMLTab -Name "Datastore details" -TextTransform capitalize   -TextSize 20 {
                     New-HTMLSection -HeaderText "Datastore details" -CanCollapse  {
                         zetable $($datastore|select Name,
                             Type,
@@ -1140,7 +1141,7 @@ write-host $OUTFILE
         
         $statsType=@("cpu.usage.average","cpu.ready.summation","mem.usage.average","disk.usage.average","disk.maxTotalLatency.latest")
 
-        New-HTMLTab -Name "VMs details" {
+        New-HTMLTab -Name "VMs details" -TextTransform capitalize   -TextSize 20{
          $VM|sort -Property name |%{
             $VM_=$_
 
