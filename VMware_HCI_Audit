@@ -312,9 +312,9 @@ if ( $debug -eq 0 ) {
             Connect-VIServer -Server $VCENTERHOSTNAME -Credential $VCCREDENTIAL -ErrorAction stop | out-null
             }
         catch {
-            write-host "Unable to connect ${DCSVCENTERHOSTNAME}, please review hostname and credentials"
-            write-host "Script will continue without VMware collection"
-            pause 
+            write-host "Unable to connect ${DCSVCENTERHOSTNAME}, please review hostname and credentials" -ForegroundColor red
+            write-host "Script will continue without VMware collection" -ForegroundColor Yellow
+            
             ${DCSVCENTERHOSTNAME}=""
             }
     }
@@ -674,6 +674,16 @@ write-host $OUTFILE
                     New-HTMLSection -HeaderText "Optimization Pools" -CanCollapse  -Collapsed -Direction row{
                         $global:DCSDVAPOOL|?{ $_.ServerId -eq $SDSID} | %{
                             $DCSDVAPOOL_=$_
+                            zeTable $($PERFORMANCEDATA[$SDSID].perf|select @{N="DeduplucationRatio";E={([Math]::Round($_.DeduplicationRatioPercentage/100,2)).toString()+":1"}},
+                                @{N="CompressionRatio";E={([Math]::Round($_.CompressionRatioPercentage/100,2)).toString()+":1"}},
+                                @{N="OptimizationPoolUsage";E={ ([Math]::Round($_.DeduplicationPoolUsedSpace/1TB,2).ToString() + "TB/" + ([Math]::Round($_.DeduplicationPoolTotalSpace/1TB,2)).ToString() + "TB")}},
+                                @{N="WithoutOptimization";E={([Math]::Round($_.ExpectedDeduplicationPoolUsedSpace/1TB,2).ToString()+"TB")}},
+                                @{N="OptimizationPoolFree";E={([Math]::Round($_.DeduplicationPoolFreeSpace/1TB)).ToString()+"TB"}},
+                                @{N="OptimizationPoolFree%";E={($_.DeduplicationPoolPercentFreeSpace).ToString()+"%"}},
+                                @{N="L2ARCUsage";E={([Math]::Round($_.DeduplicationPoolL2ARCUsedSpace/1GB)).ToString()+ "GB/" +([Math]::Round($_.DeduplicationPoolL2ARCTotalSpace/1GB)).ToString() +"GB"}},
+                                @{N="MirrorSpecialUsage";E={([Math]::Round($_.DeduplicationPoolSpecialMirrorUsedSpace/1GB,2)).ToString() + "GB/" + ([Math]::Round($_.DeduplicationPoolSpecialMirrorTotalSpace/1GB,2).ToString() + "GB")}}
+                                )
+
                             zeTable $( $DCSDVADISK | ?{ $_.DvaPoolId -eq $DCSDVAPOOL_.ID} | select @{N="PhysicalDisk";E={$ZEID=$_.ID ; ($DCSPHYSICALDISK|?{$_.DvaPoolDiskId -eq $ZEID}).Alias}},
                                 @{N="SizeGB";E={$ZEID=$_.ID ; [Math]::Round(($DCSPHYSICALDISK|?{$_.DvaPoolDiskId -eq $ZEID}).size.value/1GB) }},
                                 @{N="SectorSize";E={$ZEID=$_.ID ; (($DCSPHYSICALDISK|?{$_.DvaPoolDiskId -eq $ZEID}).Sectorsize.value) }},
@@ -681,11 +691,9 @@ write-host $OUTFILE
                                 IsSpecialMirrorDisk,
                                 @{N="RAID"; E={ if ( $_.IsL2ARCDisk -eq "false" -and $_.IsSpecialMirrorDisk -eq "false") { $DCSDVAPOOL_.RaidLevel } else {"-"}}} | sort 
                                 )
-
-
                             }
+                            
                         }
-
                     }
 
 
@@ -851,9 +859,9 @@ write-host $OUTFILE
                                     }
                                 }
                         }
-                        New-HTMLSection -HeaderText "CDPs" -CanCollapse -Collapsed {
-                        zetable $($DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID -and $_.StreamDiskDataProtectionRole -in @("BaseDisk")} |Select StorageName,
-                            @{N="Type";E={$result=(resolv $dcsrollback DestinationLogicalDiskId $_.ID AutoExpire) ; if ( ! $result ) {""} elseif ( $result -eq "true") {"Expired"} else {"Persistent"} }},
+                        New-HTMLSection -HeaderText "CDPs" -CanCollapse -Collapsed -Direction row {
+                        $CDP_=($DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID -and $_.StreamDiskDataProtectionRole -in @("BaseDisk")})
+                        zetable $($CDP_ |Select StorageName,
                             Diskstatus,
                             @{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},@{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},
                             DiskRole,
@@ -869,8 +877,16 @@ write-host $OUTFILE
                                     {resolv $dcsrollback DestinationLogicalDiskId $_.ID RestorePoint }
                                     }}|
                             sort -Property StorageName)  
-                            }
-
+                            
+                        $ROLLBACK_=$DCSROLLBACK|?{$_.SourceLogicalDiskId -in $CDP_.ID}
+                        if ( $ROLLBACK_) {
+                            zeTable  $($ROLLBACK_|select @{N="VDisk";E={resolv $DCSVIRTUALDISK ID $(resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId VirtualDiskId) Caption}},
+                                Caption,
+                                @{N="Type";E={if ($_.AutoExpire -eq "true") {"Expire"} else {"Persistent"}}},
+                                State,
+                                compressionEnabled
+                            )}
+                        }
                         New-HTMLSection -HeaderText "Snapshots" -CanCollapse -Collapsed {
                         zetable $($DCSSNAPSHOT|select @{N="Vdisk";E={Resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId StorageName }},
                             Caption,@{N="Pool";E={resolv $DCSPOOL ID (resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId PoolId) Caption}},
