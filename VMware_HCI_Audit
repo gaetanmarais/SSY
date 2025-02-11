@@ -19,14 +19,14 @@
 
 
 
-<#
+
 if ( ! ($currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) )) {
 
     write-host -ForegroundColor Red 'This script need administrator right, please rune it "as admin"'
     pause
     exit 1
     }
-    #>
+    
     
 
 
@@ -41,20 +41,15 @@ clear
 $debug=0
 
 
+#Telemetry
+#  0 Report will be uploaded to production.swarm.datacore.paris
+#  1 Report will not be uploaded
+$telemetry=0
 
 
 #
 # VARIABLES
 #
-
-
-
-
-$HRVersion="3.0"
-$COLLECTIONDATE=get-date
-
-
-$Host.UI.RawUI.WindowTitle = "DataCore - HCI Audit script $HRVersion"
 
 $global:ErrorActionPreference = 'Stop'
 $global:WarningPreference = 'SilentlyContinue'
@@ -62,7 +57,31 @@ $global:action = ""
 $global:outvar = ""
 
 
-mode 300
+$HRVersion="3.0"
+$COLLECTIONDATE=get-date
+
+
+
+#FULLSCREEN
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class Win32 {
+    [DllImport("user32.dll")]
+    public static extern int ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+}
+"@ -Language CSharp
+
+Start-Sleep -Milliseconds 500
+$hwnd = [Win32]::GetForegroundWindow()
+[Win32]::ShowWindow($hwnd, 3)  # 3 = SW_MAXIMIZE
+
+
+
 
 #Check if script is executed as admin
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -82,7 +101,20 @@ $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Pri
 ####################################################################################################################################
 ####################################################################################################################################
 
+function wait ($TIMEOUT) {
 
+if ( ! ($TIMEOUT) ) {$TIMEOUT=10}
+$T=0
+while ($T -lt $TIMEOUT) 
+    {
+    
+    write-host -NoNewline "`b$T" -ForegroundColor Yellow
+    sleep 1
+    $T++
+    }
+write-host -NoNewline "`b  "
+    
+}
 
 function resolv($VAR,$ID,$DATA,$FIELD){
     
@@ -147,6 +179,21 @@ o888bood8P'   `Y888""8o   "888" `Y888""8o  `Y8bood8P'  `Y8bod8P' d888b    `Y8bod
 
 '@
 
+
+Write-Host ""
+Write-host "You are going to execute a non-official DataCore Audit script"
+write-host "This script purpose is about collecting apllication's data from your system in the aim to generate a readable Audit report in HTML format"
+write-host "No production data will be collected, but it will gather information like DataCore host name, IP, vDisks information, Connected hosts, hypervisors,...."
+write-host "None of these data will be anomized, but the data will never been shared externaly to DataCore employes or your copany"
+write-host ""
+write-host "This repart will also be uploaded to our Datacore SWARM dedicated bucket, upload can be disabled througt TELEMETRY varriabel into the script"
+write-host ""
+write-host "   If your are not agree with these, it's still time to break the script"
+wait 10
+
+
+
+
 if ( $debug -eq 0 ) {
     # Import DataCore SANsymphony Commandlets
     try { 
@@ -168,7 +215,7 @@ if ( $debug -eq 0 ) {
         Write-host "         DataCore cmdlets could be downloaded on the DataCore support website." -ForegroundColor Red
         write-host "         https://datacore.custhelp.com/app/downloads/downloads" -ForegroundColor Yellow
 
-        pause
+        wait 10
         exit 1
         }
 
@@ -180,7 +227,7 @@ if ( $debug -eq 0 ) {
         if ( !(Get-PackageProvider -name Nuget -ListAvailable -ErrorAction SilentlyContinue)  ) {
             write-host "Nuget Package provider is not yet installed, this is mandatory" -ForegroundColor Red
             write-host "      If you don't want to install it on your system, it's time to break the script :)" -ForegroundColor yellow
-            pause
+            wait 10
             write-host " "
 
 
@@ -188,7 +235,7 @@ if ( $debug -eq 0 ) {
             catch { 
                 write-host 'Unable to install Packe Provider "Nuget"' -ForegroundColor Red
                 write-host 'Installation will stop, please try to install it manualy as Administrator' -ForegroundColor Red
-                pause
+                wait 10
                 exit 1
             }
 
@@ -202,7 +249,7 @@ if ( $debug -eq 0 ) {
     catch {
         Write-host "PSWriteHTML Powershell module is not installed, this script will try to install it, if it failed please run the script with administrator privileges." -ForegroundColor Red
         Write-host "      If you don't want to install it on your system, it's time to break the script :)" -ForegroundColor yellow
-        pause
+        wait 10
         $importPSWRITEHTML="ERROR"
         }
     
@@ -213,7 +260,7 @@ if ( $debug -eq 0 ) {
             Write-host "
             PSWriteHTML Powershell module could not be installed automatically please run this command manualy as Administrator." -ForegroundColor Red
             Write-host "    install-module -name pswritehtml -AllowClobber -Confirm:$false -Force  " -ForegroundColor yellow
-            pause
+            wait 10
             Exit 1           
             }
 
@@ -239,13 +286,13 @@ if ( $debug -eq 0 ) {
                 if ( $POWERCLICFG.DisplayDeprecationWarnings -ne "False" ) { Set-PowerCLIConfiguration -DisplayDeprecationWarnings 0 -Scope AllUsers -Confirm:$false | out-null}
                 if ( $POWERCLICFG.ParticipateInCEIP -ne "True" ) { Set-PowerCLIConfiguration -ParticipateInCEIP $true -Scope AllUsers -Confirm:$false | out-null}
 
-                pause
+                wait 10
                 exit 1
                 }
             catch { 
                 write-host "Unable to install PowerCLI, please try to install it by yourself" -ForegroundColor Red
                 write-host "    Install-Module -name VMware.PowerCLI -AllowClobber -Confirm:`$false"    -ForegroundColor yellow
-                pause
+                wait 10
                 exit 2
              }
         }
@@ -260,7 +307,7 @@ if ( $debug -eq 0 ) {
             catch { 
                 write-host "Unable to Update PowerCLI, please try to install it by yourself running as Administrator level"
                 write-host "    Update-Module -name VMware.PowerCLI -AllowClobber -Confirm:`$false" -ForegroundColor Yellow
-                pause
+                wait 10
                 exit 2
              }
             
@@ -270,7 +317,7 @@ if ( $debug -eq 0 ) {
         Write-Host "PowerCLI 13 is not installed"
         Write-Host "  open powershell admin session"
         Write-Host "  PS# Install-Module -name VMware.PowerCLI"
-        pause
+        wait 10
         exit
         }
 
@@ -293,7 +340,7 @@ if ( $debug -eq 0 ) {
     try {Connect-DcsServer -Server $SSYHOSTNAME -Credential $SSYCREDENTIAL}
     catch { 
         write-host "SSY server $SSYHOSTNAME is not reachable, please review hostname and credentials"
-        pause 
+        wait 10 
         exit 1 
         }
 
@@ -326,7 +373,7 @@ if ( $debug -eq 0 ) {
         catch {
             write-host "Unable to connect ${DCSVCENTERHOSTNAME}, please review hostname and credentials" -ForegroundColor red
             write-host "Script will continue without VMware collection" -ForegroundColor Yellow
-            
+            wait 10
             ${DCSVCENTERHOSTNAME}=""
             }
     }
@@ -383,7 +430,9 @@ New-HTMLTabPanelColor -BackgrounColor '#002D3F'
         New-HTMLImage -Source $IMG -Width 95%
         New-HTMLText -Text "Health report version $HRVERSION" -color white -FontSize 15 
         New-HTMLText -Text "Collection time :  $COLLECTIONDATE" -color white -FontSize 15
-        New-HTMLText -Text "DISCLAMER: This audit as been generated by a non official's DataCore script, take it as it is." -color yellow -FontSize 25 
+        New-HTMLText -Text "DISCLAMER: This audit has been generated by a non official's DataCore script, take it as it is." -color yellow -FontSize 25 
+        New-HTMLHorizontalLine 
+        New-HTMLText -Text "GDPR: https://www.datacoreassets.com/resources/legal/DataCore-Data-Protection-Provisions-Addendum.pdf "
     }
 
 
@@ -686,15 +735,8 @@ write-host $OUTFILE
                             @{N="OutOfAffinity Gb";E={[Math]::Round($PERFORMANCEDATA[$_.id].perf.BytesOutOfAffinity/1Gb)}}|sort -Property DiskTier)
                         zeTable $zetablevalue
 
-                         New-HTMLChart  {
-                            $zemax=($zetablevalue|Measure-Object -Property 'Size GB' -Maximum)
-                            $zetablevalue|%{
-                                
-                                ChartBar -Name $("T" + $_.DiskTier + " ["+ $_.Caption +"]") -Value $_.'Allocated GB',$($_.'Size GB' - $_.'Allocated GB'),$($zemax.Maximum - $_.'Size GB') -Color blue,White,'#002D3F'
-                                ChartBarOptions -Type barStacked -DataLabelsEnabled 0
-                                ChartLegend -HideLegend -DisableOnItemHoverHighlightDataSeries -Names "Used GB","Free GB","" -Color white -Floating 
-                                }
-                            }
+                         
+
 
                             }
                         }
@@ -1205,14 +1247,61 @@ write-host $OUTFILE
         # VMware VMs
         ####################################################
 
-
+        $VMTABLE=($VM |? {$_.PowerState -eq "PoweredOn"} |select VMhost,name,MemoryGB,@{N="CPU";E={$_.NumCpu*$_.CoresPerSocket}} |sort -Property Name|
+            Group-Object VMhost | 
+            select Name,
+            @{N="#VMs";E={ $_.count }},
+            @{N="CPU (min)";E={ ($_.group | Measure-Object 'CPU' -Minimum).Minimum}},
+            @{N="CPU (max)";E={ ($_.group | Measure-Object 'CPU' -Maximum).Maximum}},
+            @{N="CPU (avg)";E={ [Math]::Round(($_.group | Measure-Object 'CPU' -Average).Average)}},
+            @{N="CPU (sum)";E={ ($_.group | Measure-Object 'CPU' -Sum).sum}},
+            @{N="RAM GB(min)";E={ ($_.group | Measure-Object 'MemoryGB' -Minimum).Minimum}},
+            @{N="RAM GB(max)";E={ ($_.group | Measure-Object 'MemoryGB' -Maximum).Maximum}},
+            @{N="RAM GB(avg)";E={ [Math]::Round(($_.group | Measure-Object 'MemoryGB' -Average).Average)}},
+            @{N="RAM GB(sum)";E={ ($_.group | Measure-Object 'MemoryGB' -Sum).sum}})
         
         
         New-HTMLTab -Name "VMs details" -TextTransform capitalize   -TextSize 20{
+
+                New-HTMLPanel -Invisible  {
+                zetable $($VMTABLE)
+                New-HTMLSection -CanCollapse -Collapsed {
+                    New-HTMLChart -Title "#VMs by host" -TitleAlignment center -TitleColor White {
+                    $VMTABLE|%{
+                        ChartBar -Name $_.Name -Value $_.'#VMs' 
+                        ChartBarOptions -Vertical bar 
+                        ChartLegend -Names "# of VMs by host" -UseSeriesColors 
+                        
+                        
+
+                        }
+                }
+                    New-HTMLChart -Title "CPU by host" -TitleAlignment center -TitleColor White{
+                    $VMTABLE|%{
+                        ChartBar -Name $_.Name -Value $_.'CPU (min)',$_.'CPU (max)',$_.'CPU (avg)',$_.'CPU (sum)'
+                        ChartBarOptions -Vertical bar
+                        ChartLegend -Names "Min","Max","Avg","Sum" -UseSeriesColors -LegendPosition right 
+
+                        }
+                }
+                    New-HTMLChart -Title "Memory by host" -TitleAlignment center -TitleColor White{
+                    $VMTABLE|%{
+                        ChartBar -Name $_.Name -Value $_.'RAM GB(min)',$_.'RAM GB(max)',$_.'RAM GB(avg)',$_.'RAM GB(sum)' 
+                        ChartBarOptions -Vertical bar
+                        ChartLegend -Names "Min GB","Max GB","Avg GB","Sum GB" -UseSeriesColors -LegendPosition right
+                        
+
+                        }
+                }
+
+                    }
+                }
+
          $VM|sort -Property name |%{
             $VM_=$_
+            
 
-
+            
             New-HTMLSection -Name $VM_.Name -CanCollapse -Collapsed -Direction row {
                 zetable $($VM_ | Select-Object Name,
                     PowerState,
@@ -1348,7 +1437,7 @@ blablabla
                 {
                 switch  -Regex ( $LINE ) {
                     ^#  { break }#close switch comment
-    #                ^$  { break }#close switch empty line
+                    ^$  { break }#close switch empty line
                     "\[*\]" { 
                          ${BPTITLE}=$(${LINE} -replace("\[","") -replace("\]",""))
                          break
@@ -1433,10 +1522,6 @@ blablabla
 
 }
 }
-    else {
-        write-host "bestpractice.txt file is missing, Best Practice tab hided" -ForegroundColor red
-        }
-
 
 
 }    #Close HTML Page
@@ -1444,20 +1529,22 @@ blablabla
 
 
 
+if ( $telemetry -eq 0 ) {
+    #### Send report to DataCore SWARM bucket
 
-#### Send report to DataCore SWARM bucket
-
-if ( (Test-NetConnection -Port 443 -ComputerName production.swarm.datacore.paris -ErrorAction SilentlyContinue).TcpTestSucceeded ) {
-    Invoke-WebRequest -Uri "https://production.swarm.datacore.paris/audit/${DCSSERVERGROUP_}.html" -InFile "${OUTFILE}" -Method "POST" -ContentType "text/html" -Headers @{
-        "Authorization" = "Basic ZGVwb3RVU1I6UEBzc3cwcmQ="
-        "X-HR-VERSION-Meta" = "$HRVERSION"
-        "X-COLLECTION-TIME-Meta" = "$COLLECTIONDATE"
-        "X-COLLECTION-COMPUTERNAME-Meta" = "$env:COMPUTERNAME"
-        "X-COLLECTION-USERNAME-Meta" = "$env:USERNAME"
-        "X-COLLECTION-USERDOMAIN-Meta" = "$env:USERDOMAIN"
-        "X-COLLECTION-URL" = "$URL"
+    if ( (Test-NetConnection -Port 443 -ComputerName production.swarm.datacore.paris -ErrorAction SilentlyContinue).TcpTestSucceeded ) {
+        Invoke-WebRequest -Uri "https://production.swarm.datacore.paris/audit/${DCSSERVERGROUP_}.html" -InFile "${OUTFILE}" -Method "POST" -ContentType "text/html" -Headers @{
+            "Authorization" = "Basic ZGVwb3RVU1I6UEBzc3cwcmQ="
+            "X-HR-VERSION-Meta" = "$HRVERSION"
+            "X-COLLECTION-TIME-Meta" = "$COLLECTIONDATE"
+            "X-COLLECTION-COMPUTERNAME-Meta" = "$env:COMPUTERNAME"
+            "X-COLLECTION-USERNAME-Meta" = "$env:USERNAME"
+            "X-COLLECTION-USERDOMAIN-Meta" = "$env:USERDOMAIN"
+            "X-COLLECTION-URL" = "$URL"
 
     
-        } |Out-Null    #close S3 POST
+            } |Out-Null    #close S3 POST
 
-    }  # Close S3 test connection
+        }  # Close S3 test connection
+
+} #close test telemetry value
