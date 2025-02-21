@@ -1,10 +1,10 @@
 #!/bin/bash
 # Author: Gaetan MARAIS
 # Date  : 2025/02/15
-# 
+#
 # This script is about helping multipath diagnose with DataCore SSY vDisks
 #   it will add FrontEnd info infront of Lun targets
-#   coupled with SSY RestAPI it could also add the SSY vDisk name to the Multipath 
+#   coupled with SSY RestAPI it could also add the SSY vDisk name to the Multipath
 #
 #############################################################
 #############################################################
@@ -39,7 +39,7 @@ if [ -f /root/.SSY/credentials ] ; then
     SSYUSER=$(awk -F"=" '/SSYUserName/ {print $2}' /root/.SSY/credentials)
     SSYPWD=$(awk -F"=" '/SSYPassword/ {print $2}' /root/.SSY/credentials)
     VDISKS=$(curl -s -k -L -H "ServerHost: ${SERVERHOST}" -u${SSYUSER}:${SSYPWD} https://${SERVERHOST}/RestService/rest.svc/1.0/virtualdisks)
-    if [ $(echo $VDISKS|jq -e .ErrorCode) <> "Null" ]; then
+    if [ $(echo $VDISKS|jq -e 'try(.ErrorsCode)') ]; then
       VDISKS=""
       printf "${RED}Unable to gather data from SSY, please review the credential file${NC}\n"
     fi
@@ -50,19 +50,16 @@ fi
 
 multipath -ll 1>/tmp/multipath.ll.$$
 multipath -v3 &>/tmp/multipath.v3.$$
-
-
 DEVICES=$(cat /tmp/multipath.v3.$$ | awk -F"\||:"  '/\| sd/ {print $2}' |sort -u)
-
 
 while IFS= read -r LINE; do
   VDISK=""
   if [ $(echo ${LINE} | grep -c "${DEVICES[*]}") -eq 0  ]; then
     if [ $(echo ${LINE} | grep -c "DataCore,Virtual Disk") -eq 1 ]; then
        NAA=$(echo ${LINE} | awk -F'[()]' '{print substr($2,2)}' | tr '[:lower:]' '[:upper:]')
-       VDISK=$(echo ${VDISKS}|jq --arg name $NAA -r '.[] | select(.ScsiDeviceIdString == $name) | .Alias')
+       if [[ $VDISKS ]] ; then VDISK=$(echo ${VDISKS}|jq --arg name $NAA -r '.[] | select(.ScsiDeviceIdString == $name) | .Alias') ; fi
     fi
-    if [ $VDISK ] ; then printf "${YELLOW}[${VDISK}]${NC} ${LINE} ${YELLOW}[${VDISK}]${NC}\n"
+    if [[ $VDISK ]] ; then printf "${YELLOW}[${VDISK}]${NC} ${LINE} ${YELLOW}[${VDISK}]${NC}\n"
     else echo "${LINE}"
     fi
   else
@@ -75,6 +72,5 @@ while IFS= read -r LINE; do
     fi
   fi
 done < /tmp/multipath.ll.$$
-
 
 rm /tmp/multipath.*.$$
