@@ -38,7 +38,7 @@ if [ -f /root/.SSY/credentials ] ; then
     SERVERHOST=$(awk -F"=" '/ServerHost/ {print $2}' /root/.SSY/credentials)
     SSYUSER=$(awk -F"=" '/SSYUserName/ {print $2}' /root/.SSY/credentials)
     SSYPWD=$(awk -F"=" '/SSYPassword/ {print $2}' /root/.SSY/credentials)
-    VDISKS=$(curl -s -k -L -H "ServerHost: ${SERVERHOST}" -u${SSYUSER}:${SSYPWD} https://${SERVERHOST}/RestService/rest.svc/1.0/virtualdisks)
+    VDISKS=$(curl -s -m 3 -k -L -H "ServerHost: ${SERVERHOST}" -u${SSYUSER}:${SSYPWD} https://${SERVERHOST}/RestService/rest.svc/1.0/virtualdisks)
     if [ $(echo $VDISKS|jq -e 'try(.ErrorsCode)') ]; then
       VDISKS=""
       printf "${RED}Unable to gather data from SSY, please review the credential file${NC}\n"
