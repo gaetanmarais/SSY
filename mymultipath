@@ -47,7 +47,7 @@ if [ -f /root/.SSY/credentials ] ; then
 else
   VDISKS=""
 fi
-
+multipath -r
 multipath -ll 1>/tmp/multipath.ll.$$
 multipath -v3 &>/tmp/multipath.v3.$$
 DEVICES=$(cat /tmp/multipath.v3.$$ | awk -F"\||:"  '/\| sd/ {print $2}' |sort -u)
