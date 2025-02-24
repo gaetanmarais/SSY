@@ -1,7 +1,7 @@
 $FILE="C:\users\gmarais\OneDrive - DataCore Software Corporation\Desktop\Scripts\SSY\list.txt"
 
 
-$Licenses = @("xxxx","yyyy")
+$Licenses = @("M72H6-30JBS","PG03H-1S6JG")
 $COMPANY = "DataCore"
 $CONTACT = "Gaetan MARAIS"
 $EMAIL = "gaetan.marais@datacore.com"
@@ -58,12 +58,28 @@ $LINES|%{
         $RESULT=New-Object PSObject
         $RESULT|Add-Member -MemberType NoteProperty -Name "#" -Value $J
         $RESULT|Add-Member -MemberType NoteProperty -Name "SERVER" -Value $DCSSERVER
+        $RESULT|Add-Member -MemberType NoteProperty -Name "SRVGRP" -Value "-"
         $RESULT|Add-Member -MemberType NoteProperty -Name "RESULT" -Value $LICERROR
         $OUTFILE+=$RESULT
         $J++
         return
     }
 
+
+    try { $GLOBAL:GROUPS=$(Invoke-RestMethod -TimeoutSec 15 -Method GET -Headers $headers -Uri https://$dcsserver/RestService/rest.svc/1.0/ServerGroups) }
+    catch {
+        $LICERROR=$_
+        $ERR=1
+        Write-Host "Error Gathering server : $dcsserver" -BackgroundColor Red
+        $RESULT=New-Object PSObject
+        $RESULT|Add-Member -MemberType NoteProperty -Name "#" -Value $J
+        $RESULT|Add-Member -MemberType NoteProperty -Name "SERVER" -Value $DCSSERVER
+        $RESULT|Add-Member -MemberType NoteProperty -Name "SRVGRP" -Value "-"
+        $RESULT|Add-Member -MemberType NoteProperty -Name "RESULT" -Value $LICERROR
+        $OUTFILE+=$RESULT
+        $J++
+        return
+    }
     
     $i=0
 
@@ -83,6 +99,7 @@ $LINES|%{
             $RESULT=New-Object PSObject
             $RESULT|Add-Member -MemberType NoteProperty -Name "#" -Value $J
             $RESULT|Add-Member -MemberType NoteProperty -Name "SERVER" -Value $SERVER_.caption
+            $RESULT|Add-Member -MemberType NoteProperty -Name "SRVGRP" -Value $GROUPS.ID
             $RESULT|Add-Member -MemberType NoteProperty -Name "RESULT" -Value $LICENSES[$i]
             }
         catch {
@@ -91,6 +108,7 @@ $LINES|%{
             $RESULT=New-Object PSObject
             $RESULT|Add-Member -MemberType NoteProperty -Name "#" -Value $J
             $RESULT|Add-Member -MemberType NoteProperty -Name "SERVER" -Value $SERVER_.caption
+            $RESULT|Add-Member -MemberType NoteProperty -Name "SRVGRP" -Value $GROUPS.ID
             $RESULT|Add-Member -MemberType NoteProperty -Name "RESULT" -Value $LICERROR
             }
         $i++
