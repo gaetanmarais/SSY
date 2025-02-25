@@ -10,7 +10,8 @@ fi
 
 
 if [ "$1" == "-cronit" ] && [ $(grep -c $0 /etc/crontab) -eq 0 ]; then
-  echo "* * * * * $(readlink -f $0) >/dev/null 2>&1">>/etc/crontab
+  cp $0 /etc/cron.d
+  echo "* * * * * root /etc/cron.d/$0 >/dev/null 2>&1">>/etc/crontab
   /etc/init.d/cron reload
 fi
 
