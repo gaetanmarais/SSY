@@ -47,10 +47,14 @@ if [ -f /root/.SSY/credentials ] ; then
 else
   VDISKS=""
 fi
+
 multipath -r
 multipath -ll 1>/tmp/multipath.ll.$$
 multipath -v3 &>/tmp/multipath.v3.$$
+
+
 DEVICES=$(cat /tmp/multipath.v3.$$ | awk -F"\||:"  '/\| sd/ {print $2}' |sort -u)
+
 
 while IFS= read -r LINE; do
   VDISK=""
@@ -59,8 +63,11 @@ while IFS= read -r LINE; do
        NAA=$(echo ${LINE} | awk -F'[()]' '{print substr($2,2)}' | tr '[:lower:]' '[:upper:]')
        if [[ $VDISKS ]] ; then VDISK=$(echo ${VDISKS}|jq --arg name $NAA -r '.[] | select(.ScsiDeviceIdString == $name) | .Alias') ; fi
     fi
-    if [[ $VDISK ]] ; then printf "${YELLOW}[${VDISK}]${NC} ${LINE} ${YELLOW}[${VDISK}]${NC}\n"
-    else echo "${LINE}"
+    if [[ $VDISK ]] ; then printf "\n${YELLOW}[${VDISK}]${NC} ${LINE} ${YELLOW}[${VDISK}]${NC}\n"
+    else
+      if [ $(echo "${LINE}" | grep -c "prio=50") -eq 1 ]; then GREEN='\033[1;32m'; fi
+      if [ $(echo "${LINE}" | grep -c "prio=10") -eq 1 ]; then GREEN='\033[1;34m'; fi
+      echo "${LINE}"
     fi
   else
     DEVICE=$(echo "$LINE" | awk -F"[0-9]+\:[0-9]+\:[0-9]+\:[0-9]" '{print $2}'|awk '{print $1}')
@@ -72,5 +79,6 @@ while IFS= read -r LINE; do
     fi
   fi
 done < /tmp/multipath.ll.$$
+
 
 rm /tmp/multipath.*.$$
