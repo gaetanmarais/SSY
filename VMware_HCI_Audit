@@ -11,13 +11,13 @@
 #### 
 #### Version    : 3.0.1     2025/02/10     Adding BestPratice TAB     
 ####              3.0.2     2025/02/11     Adding RGPD disclaimer
-####              3.0.3     2025/02/15     Ofline mode (SB)
-####
+####              3.0.3     2025/02/15     Offline mode (SB)
+####              3.0.4     2025/02/19     Adding FC discovery 
 ####
 ###################################################################################################################################
 ###################################################################################################################################
 
-$HRVersion="3.0.3"
+$HRVersion="3.0.4"
 
 <#
 if ( ! ($currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) )) {
@@ -351,8 +351,8 @@ if ( $SBFOLDER ) {
         exit 99
         }
     $COLLECTIONDATE=(Get-ChildItem -Path $SBFOLDER -Recurse -filter DcsObjectModel.xml | select -First 1).CreationTimeUtc
-    [xml]$script:DCSOBJECTMODEL=Get-Content -Path "$OFFLINEOBJECTMODEL"
-    [xml]$script:DCSPERFORMANCEMODEL=Get-Content -Path "$OFFLINEPERFORANCEMODEL"
+    [xml]$global:DCSOBJECTMODEL=Get-Content -Path "$OFFLINEOBJECTMODEL"
+    [xml]$global:DCSPERFORMANCEMODEL=Get-Content -Path "$OFFLINEPERFORANCEMODEL"
 
     $DCSSERVERGROUP=($DCSOBJECTMODEL.DataRepository.ServerHostGroupData.Alias +" (SupportBundles :" + $COLLECTIONDATE +" UTC)")
     $DCSSERVERGROUP_=($DCSOBJECTMODEL.DataRepository.ServerHostGroupData.Alias +" (SupportBundles)") -replace(" ","_") -replace(":","")
@@ -523,6 +523,10 @@ if ( $debug -le 1 ) {
     $script:DCSDVADISK=$DCSOBJECTMODEL.DataRepository.DvaPoolDiskData
     $script:DCSDVAVOL=$DCSOBJECTMODEL.DataRepository.DvaPoolVolData
     $script:DCSPHYSICALDISK=$DCSOBJECTMODEL.DataRepository.PhysicalDiskData
+    $script:DCSFCDATA=$DCSOBJECTMODEL.DataRepository.FcPortData
+    $script:DCSFCCONNECTION=$DCSOBJECTMODEL.DataRepository.FcConnectionData
+    $script:DCSSERVERFCPORT=$DCSOBJECTMODEL.DataRepository.ServerFcPortData
+
    
 
     }
@@ -817,6 +821,23 @@ write-host $OUTFILE
                             HbaNicProduct|sort -Property Caption,Role)  
                             }                    #close Section iSCSI
 
+                    if ( $DCSSERVERFCPORT ) {
+                    New-HTMLSection -HeaderText "FC Details" -CanCollapse -Collapsed  {
+                        zeTable $($DCSSERVERFCPORT | ?{ $_.hostid -eq  $SDSID}| select Caption,
+                            portname,
+                            Connected,
+                            @{N="Role";E={$_.ServerPortProperties.Role}},
+                            @{N="SymbolicNodeName";E={$_.ServerPortProperties.SymbolicNodeName}},
+                            @{N="ConnectionMode";E={$_.ServerPortProperties.ConnectionMode}},
+                            @{N="DataRateMode";E={$_.ServerPortProperties.DataRateMode}},
+                            @{N="DisablePortWhileStopped";E={$_.ServerPortProperties.DisablePortWhileStopped}}| sort -Property Role,Caption
+                            )  
+                            }                    #close Section FC
+                            }
+                            
+
+
+
                     New-HTMLSection -HeaderText "OS Details" -CanCollapse -Collapsed -Direction row {
                         if ( ${DCSVCENTERHOSTNAME} ) {
                             [xml]$script:OSDETAIL=(Get-ChildItem $TMPPATH -Filter $SDS* | sort -Property LastWriteTime -Descending | select -First 1)|Get-Content
@@ -928,8 +949,8 @@ write-host $OUTFILE
 
                         
                 }         #close HTMLTab Connected to SDS
-                New-HTMLTab -Name "vDisks $SDS" -TextTransform capitalize   -TextSize 20 {
-
+                New-HTMLTab -Name "LogicalDisks $SDS" -TextTransform capitalize   -TextSize 20 {
+                <#
                         New-HTMLSection -HeaderText "Vdisks" -CanCollapse -Collapsed  {
                         zetable $($DCSVDISK|select Caption,
                             DiskStatus,
@@ -957,7 +978,7 @@ write-host $OUTFILE
                                 }}|
                             sort Caption,FirstHost ) 
                             }
-
+#>
                         New-HTMLSection -HeaderText "Logical disks details" -CanCollapse -Collapsed -Direction row {
                         #$i=0
                         #$i++
@@ -1017,7 +1038,111 @@ write-host $OUTFILE
                             }
                         
                 }                    # Close THMLTab vDisks
-            }                                              #close for each SDS server
+            }
+         
+            New-HTMLTab -Name "vDisks" -TextTransform capitalize   -TextSize 20 {
+
+                        New-HTMLSection -HeaderText "Vdisks" -CanCollapse -Collapsed  {
+                        zetable $($DCSVDISK|select Caption,
+                            DiskStatus,
+                            @{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},
+                            @{N="Allocated Gb";E={[Math]::Round($PERFORMANCEDATA[$_.id].perf.BytesAllocated/1Gb)}},
+                            @{N="FirstHost";E={resolv $DCSSERVER ID $_.FirstHostId Caption}},
+                            @{N="SecondHost";E={resolv $DCSSERVER ID $_.SecondHostId Caption}},
+                            @{N="BackupHost";E={resolv $DCSSERVER ID $_.BackupHostId Caption}},
+                            @{N="PreferredServer";E={resolv $DCSSERVER ID $_.PreferredServer Caption}},
+                            @{N="StorageProfile";E={resolv $DCSPROFILE ID $_.StorageProfileId Caption}},
+                            @{N="CDP";E={ if ( (resolv $DCSLOGICALDISK VirtualDiskId $_.ID StreamState) -match "Active") {"true"} else {"false"} }},
+                            WriteThrough,
+                            IsServed,
+                            MirrorTrunkMappingEnabled,
+                            ResiliencyEnabled,
+                            EncryptionEnabled,
+                            CompressionEnabled,
+                            DeduplicationEnabled,
+                            @{N="Optimization Policy";E={$_.StaleDataEnabled}},
+                            @{N="Optimization Policy type";E={switch ($_.StaleDataWeight){
+                                    32 {"Lazy"}
+                                    64 {"Normal"}
+                                    96 {"Aggressive"}
+                                    }
+                                }}|
+                            sort Caption,FirstHost ) 
+                            }
+                        <#
+                        New-HTMLSection -HeaderText "Logical disks details" -CanCollapse -Collapsed -Direction row {
+                        #$i=0
+                        #$i++
+                        $DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID  -and $_.StreamDiskDataProtectionRole -ne "HistoryLog"}|sort -Property StorageName| % {
+                                $script:DCSLOGICALDISK_=$_
+                                New-HTMLSection -HeaderText $DCSLOGICALDISK_.StorageName -CanCollapse -Collapsed -HeaderBackGroundColor grey {
+                                    zetable $($DCSLOGICALDISK_|select StorageName,
+                                        Diskstatus,
+                                        @{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},
+                                        @{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},
+                                        DiskRole,IsMapped,ClientAccessRights,
+                                        @{N="TierAffinity";E={$_.TierAffinity.int -join(",")}},
+                                        SequentialStorage,
+                                        @{N="CDP";E={if ($_.StreamState -eq "Active") {"true"} else {"false"}}}
+                                        ) 
+                                    zetable $(($DCSLOGICALDISK_| select @{N="Mapping";E={((resolv $DCSLOGICALUNIT LogicalDiskId $_.id Caption)|sort)}}).mapping -split(",")) 
+                                    }
+                                }
+                        }
+                        New-HTMLSection -HeaderText "CDPs" -CanCollapse -Collapsed -Direction row {
+                        $CDP_=($DCSLOGICALDISK|?{$_.ServerHostId -eq $SDSID -and $_.StreamDiskDataProtectionRole -in @("BaseDisk")})
+                        zetable $($CDP_ |Select StorageName,
+                            Diskstatus,
+                            @{N="Size Gb";E={[Math]::Round($_.size.value/1Gb)}},@{N="Pool";E={resolv $DCSPOOL ID $_.PoolId Caption}},
+                            DiskRole,
+                            IsMapped,
+                            ClientAccessRights,
+                            @{N="TierAffinity";E={$_.TierAffinity.int -join(",")}},
+                            @{N="Used";E={if ($_.caption -notlike "*@*"){ [Math]::Round($PERFORMANCEDATA[$_.id].perf.StreamBytesUsed/1GB).ToString() + "GB"}}},
+                            @{N="Allocated";E={if ($_.caption -notlike "*@*"){ [Math]::Round($PERFORMANCEDATA[$_.id].perf.StreamBytesAllocated/1GB).ToString() + "GB"}}},
+                            @{N="Max";E={if ($_.caption -notlike "*@*"){ ([Math]::Round($_.StreamSize.value)/1GB).toString()+"GB" }}},
+                            @{N="RetentionPeriod";E={if ($_.caption -notlike "*@*")
+                                    {(new-timespan -Seconds ($PERFORMANCEDATA[$_.id].perf.RetentionPeriod/1000))}
+                                else
+                                    {resolv $dcsrollback DestinationLogicalDiskId $_.ID RestorePoint }
+                                    }}|
+                            sort -Property StorageName)  
+                            
+                        $ROLLBACK_=$DCSROLLBACK|?{$_.SourceLogicalDiskId -in $CDP_.ID}
+                        if ( $ROLLBACK_) {
+                            zeTable  $($ROLLBACK_|select @{N="VDisk";E={resolv $DCSVIRTUALDISK ID $(resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId VirtualDiskId) Caption}},
+                                Caption,
+                                @{N="Type";E={if ($_.AutoExpire -eq "true") {"Expire"} else {"Persistent"}}},
+                                State,
+                                compressionEnabled
+                            )}
+                        }
+                        New-HTMLSection -HeaderText "Snapshots" -CanCollapse -Collapsed {
+                        zetable $($DCSSNAPSHOT|select @{N="Vdisk";E={Resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId StorageName }},
+                            Caption,@{N="Pool";E={resolv $DCSPOOL ID (resolv $DCSLOGICALDISK ID $_.SourceLogicalDiskId PoolId) Caption}},
+                            Type,
+                            State,
+                            CompressionEnabled,
+                            @{N="MigrationPercentage";E={$PERFORMANCEDATA[$_.ID].perf.MigrationPercentage}},
+                            @{N="DifferencePercentage";E={$PERFORMANCEDATA[$_.ID].perf.DifferencePercentage}},
+                            @{N="GBMigrated";E={($PERFORMANCEDATA[$_.ID].perf.TotalBytesMigrated)/1GB}} | sort ) 
+                            }
+                        #>
+            $VDISKSPATHS=$DCSLOGICALUNIT|select @{N="Vdisk";E={resolv $DCSLOGICALDISK ID $_.LogicalDiskId STORAGENAME}},Caption,@{N="LUN";E={$_.LUN.QUAD}},Type,Enabled,Preferred 
+            New-HTMLSection -HeaderText "Vdisks Paths" -CanCollapse -Collapsed -Direction row {
+            $VDISKSPATHS|%{
+                $VDISKSPATHS_=$_
+                New-HTMLSection -HeaderText $VDISKSPATHS_.vDisk -CanCollapse -Collapsed -HeaderBackGroundColor grey {
+                    zeTable $($VDISKSPATHS|?{$_.vDisk -eq $VDISKSPATHS_.vdisk}|select Type,Caption,Lun,Enabled,Preferred|sort Type,Caption)
+                    }
+                }
+            }
+
+                }                    # Close THMLTab vDisks
+   
+            
+
+                                                          #close for each SDS server
          }           #close SDS HTMLTabPanel
         }                                  #close SANSYmphony TAB
 
