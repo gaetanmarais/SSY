@@ -49,6 +49,7 @@ else
 fi
 
 multipath -r
+sleep 2
 multipath -ll 1>/tmp/multipath.ll.$$
 multipath -v3 &>/tmp/multipath.v3.$$
 
