@@ -15,8 +15,8 @@
 #
 
 
-if [ ! -f /usr/sbin/$(basename "$0") ]; then
-cp $0 /usr/sbin
+if [ ! -f /usr/local/bin/$(basename "$0") ]; then
+cp $0 /usr/local/bin
 fi
 
 
