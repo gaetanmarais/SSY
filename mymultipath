@@ -65,8 +65,8 @@ while IFS= read -r LINE; do
     fi
     if [[ $VDISK ]] ; then printf "\n${YELLOW}[${VDISK}]${NC} ${LINE} ${YELLOW}[${VDISK}]${NC}\n"
     else
-      if [ $(echo "${LINE}" | grep -c "prio=50") -eq 1 ]; then GREEN='\033[1;32m'; fi
-      if [ $(echo "${LINE}" | grep -c "prio=10") -eq 1 ]; then GREEN='\033[1;34m'; fi
+      if [ $(echo "${LINE}" | grep -c "status=active") -eq 1 ]; then GREEN='\033[1;32m'; fi
+      if [ $(echo "${LINE}" | grep -c "status=enabled") -eq 1 ]; then GREEN='\033[1;34m'; fi
       echo "${LINE}"
     fi
   else
