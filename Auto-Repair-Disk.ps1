@@ -1,4 +1,4 @@
-﻿################################################################
+################################################################
 ################################################################
 ################################################################
 ##
@@ -15,6 +15,11 @@
 ##         : Spare disk have to be renommed using "SPARE-Tx_blablabla"
 ##         : Tx is the Tier number
 ##
+##
+##         : in some situation, you will need to unrestricted the execution policy
+##         :      Set-ExecutionPolicy Unrestricted
+##         : and/or unblock the execution of this non-signed script
+##         :      Unblock-File -Path
 
 
 <#
@@ -48,7 +53,14 @@ Param(
     $help,
     [Parameter(Mandatory = $false, HelpMessage="Disk pool in trouble")]
     [string]
-    $DiskPools  
+    $DiskPools,
+    [Parameter(Mandatory = $false, HelpMessage="Datacore Username")]
+    [string]
+    $dcsusername,
+    [Parameter(Mandatory = $false, HelpMessage="Datacore user password")]
+    [string]
+    $dcspassword
+      
 )
 
 # Get the installation path of SANsymphonyV
@@ -72,6 +84,7 @@ $Time2Wait = 1#60*10    #10 minutes
 $ForcePurge = 1       #0 Purge will not be executed if dataloss (snap)
 
 $eventlogsource = $scriptname
+New-EventLog -ComputerName $server  -LogName Application -Source $eventlogsource -ErrorAction SilentlyContinue
 
 ################################################################
 ################################################################
@@ -106,11 +119,14 @@ catch {
 
     $ErrorMessage"
     Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 1 -Category 0 -Message $logmsg
+    write-host $logmsg
     exit 100
     }
 
 
-try {Connect-DcsServer}
+try { if ($dcsusername) { Connect-DcsServer -Server localhost -UserName $dcsusername -Password $dcspassword}
+        else { Connect-DcsServer }
+    }
 catch {
     $ErrorMessage = $_.Exception.Message
     $logmsg="
@@ -118,6 +134,7 @@ catch {
 
     $ErrorMessage"
     Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 2 -Category 0 -Message $logmsg
+    write-host $logmsg
     exit 100
 }
 
