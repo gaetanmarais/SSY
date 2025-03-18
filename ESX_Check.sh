@@ -4,7 +4,7 @@
 # Check Network and HBA Firwmare and Drivers HCL
 #
 # Author  : Gaetan MARAIS
-# Version : 1.0
+# Version : 2.0   25/03/18  - update for broadcom links
 #
 #######################################################
 
@@ -32,7 +32,9 @@ DID=$(echo $VALUE|awk '{print $1}'|awk -F":" '{print $2}')
 SVID=$(echo $VALUE|awk '{print $2}'|awk -F":" '{print $1}')
 SSID=$(echo $VALUE|awk '{print $2}'|awk -F":" '{print $2}')
 echo "$VID:$DID $SVID:$SSID"
-echo "https://www.vmware.com/resources/compatibility/search.php?deviceCategory=io&details=1&VID=$VID&DID=$DID&SVID=$SVID&SSID=$SSID&page=1&display_interval=10&sortColumn=Partner&sortOrder=Asc"
+#echo "https://www.vmware.com/resources/compatibility/search.php?deviceCategory=io&details=1&VID=$VID&DID=$DID&SVID=$SVID&SSID=$SSID&page=1&display_interval=10&sortColumn=Partner&sortOrder=Asc"
+echo "https://compatibilityguide.broadcom.com/search?program=io&persona=live&column=brandName&order=asc&vid=$VID&did=$DID&svid=$SVID&maxSsid=$SSID&activePage=1&activeDelta=20"
+
 echo "-------------------------------------------------"
 done
 
