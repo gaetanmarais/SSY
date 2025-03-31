@@ -23,8 +23,8 @@ $vcenter = "vcenter510.datacore.paris"
 $username = "administrator@vsphere.local"
 $password = "xxxxxxxxx"
 
-# doVmotion   0=No vMotion, 1=Auto, 2=Ask
-$doVmotion = 1      # 
+# doVmotion   0=No vMotion, 1=Auto
+$doVmotion = 0
 
 
 # DataCenter definition  
@@ -34,8 +34,6 @@ $VMhostsDC1=@('\d*[13579]$')
 $VMhostsDC2=@('\d*[02468]$')
 $DataStoreDC1=@('\d*[13579]$')
 $DataStoreDC2=@('\d*[02468]$')
-
-$testREG=@('\d*[0123456789]$')
 
 # Disable SSL check
 if (-not ("TrustAllCertsPolicy" -as [type])) {
