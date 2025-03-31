@@ -21,7 +21,7 @@
 # Variables
 $vcenter = "vcenter510.datacore.paris"
 $username = "administrator@vsphere.local"
-$password = "Datacore1!"
+$password = "xxxxxxxxx"
 
 # doVmotion   0=No vMotion, 1=Auto, 2=Ask
 $doVmotion = 1      # 
