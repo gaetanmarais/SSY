@@ -53,8 +53,6 @@ public class TrustAllCertsPolicy {
 }
 [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
 
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-
 
 
 
