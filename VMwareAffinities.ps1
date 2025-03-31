@@ -19,37 +19,47 @@
 
 
 # Variables
-$vcenter = "vcenter510.datacore.paris"
+$vcenter = "10.12.104.100"
 $username = "administrator@vsphere.local"
-$password = "xxxxxxxxx"
+$password = "xxxxxxxxxxx"
 
 # doVmotion   0=No vMotion, 1=Auto
-$doVmotion = 0
+$doVmotion = 0     
 
 
 # DataCenter definition  
 # DC1 VM and Storage need a latest oven caracter 
 # DC2 VM and Storage need a latest odd caracter
-$VMhostsDC1=@('\d*[13579]$')
-$VMhostsDC2=@('\d*[02468]$')
+$VMhostsDC1=@('\d*[13579].datacore.paris$')
+$VMhostsDC2=@('\d*[02468].datacore.paris$')
 $DataStoreDC1=@('\d*[13579]$')
 $DataStoreDC2=@('\d*[02468]$')
 
-# Disable SSL check
-if (-not ("TrustAllCertsPolicy" -as [type])) {
-Add-Type @"
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAllCertsPolicy {
-    public bool CheckValidationResult(
-        ServicePoint srvPoint, X509Certificate certificate,
-        WebRequest request, int certificateProblem) {
-        return true;
-    }
-}
+
+    try
+    {
+        Write-Host "Adding TrustAllCertsPolicy type." -ForegroundColor White
+        Add-Type -TypeDefinition  @"
+        using System.Net;
+        using System.Security.Cryptography.X509Certificates;
+        public class TrustAllCertsPolicy : ICertificatePolicy
+        {
+             public bool CheckValidationResult(
+             ServicePoint srvPoint, X509Certificate certificate,
+             WebRequest request, int certificateProblem)
+             {
+                 return true;
+            }
+        }
 "@
-}
-[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+
+      }
+    catch
+    {
+        Write-Host $_ -ForegroundColor "Yellow"
+    }
+
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
 
 
 
@@ -113,7 +123,7 @@ foreach ($vmhost in $vmhosts) {
                     }
                 }
     
-        if (-not $datastores) { $datastores = @("NoDataStore") }
+        if (-not $datastores) { $datastores = @("Aucun") }
 
 
     # Assign DataCenter to VM
