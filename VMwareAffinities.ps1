@@ -113,7 +113,7 @@ foreach ($vmhost in $vmhosts) {
                     }
                 }
     
-        if (-not $datastores) { $datastores = @("Aucun") }
+        if (-not $datastores) { $datastores = @("NoDataStore") }
 
 
     # Assign DataCenter to VM
