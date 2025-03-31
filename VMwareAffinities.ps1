@@ -19,7 +19,7 @@
 
 
 # Variables
-$vcenter = "10.12.104.100"
+$vcenter = "vcenter510.datacore.paris"
 $username = "administrator@vsphere.local"
 $password = "xxxxxxxxxxx"
 
@@ -28,14 +28,35 @@ $doVmotion = 0
 
 
 # DataCenter definition  
-# DC1 VM and Storage need a latest oven caracter 
-# DC2 VM and Storage need a latest odd caracter
-$VMhostsDC1=@('\d*[13579].datacore.paris$')
-$VMhostsDC2=@('\d*[02468].datacore.paris$')
-$DataStoreDC1=@('\d*[13579]$')
-$DataStoreDC2=@('\d*[02468]$')
+#VMhostsDCX is regex to match all ESX hosted in DataCenterX
+#DataStoreDCX is regex to match all Datastore assigned to DataCenterX
+#
+# RegEx cheatsheet
+#
+#  .	       any character except newline
+#  \w\d\s	   word, digit, whitespace
+#  \W\D\S	   not word, digit, whitespace
+#  [abc]	   any of a, b, or c
+#  [^abc]	   not a, b, or c
+#  [a-g]	   character between a & g
+#
+#  ^abc$	   start / end of the string
+#  \b\B	       word, not-word boundary
+#  a*a+a?	   0 or more, 1 or more, 0 or 1
+#  a{5}a{2,}   exactly five, two or more
+#  a{1,3}	   between one & three
+#  a+?a{2,}?   match as few as possible
+#  ab|cd|ef	   match ab or cd or ef
 
 
+$VMhostsDC1='\d*[13579]$'                         
+$VMhostsDC2='\d*[02468]$'
+$DataStoreDC1='\d*[13579]$|^ESX611.*$'       
+$DataStoreDC2=@('\d*[02468]$|^ESX612.*$')
+
+
+
+# Disable SSL check over HTTPS
     try
     {
         Write-Host "Adding TrustAllCertsPolicy type." -ForegroundColor White
@@ -70,7 +91,7 @@ $DataStoreDC2=@('\d*[02468]$')
 
     $authResponse = Invoke-RestMethod -Uri "https://$vcenter/rest/com/vmware/cis/session" -Method Post -Headers @{"Authorization" = "Basic $([Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$username`:$password")))"} 
     if (-not $authResponse.value) {
-        Write-Host "Échec de l'authentification ! Vérifiez vos identifiants."
+        Write-Host "Unable to create a session with $vcenter ! Please look for yours credentials."
         exit 1
     }
     $sessionId = $authResponse.value
@@ -177,12 +198,32 @@ if ( $list.count -ne 0 ) {
 }
 
 
-
 $List=$vmInfoList| ? {$_.vMotion_needed -eq "N-A" }
 if ( $list.count -ne 0 ) {
     # Show the result : 
     write-host -ForegroundColor yellow "No Action will be take for these VMs as the ESX hosts or DataStore are not compliant with the script RegEx variables"
     $list |ft
+
+    write-host -ForegroundColor Yellow "But ..."
+    
+    $NADS=@()
+    $List|Group-Object -Property Datastores | %{
+        $Line=$_
+        $DS=$Line.Name
+
+        $Line.group|Group-Object -Property Host_Name | % {
+                $line2=$_
+                $ESX=$Line2.name
+                $NADS += [PSCustomObject]@{
+                    DataStore = $DS
+                    VMHost = $ESX
+                    VMS = $Line2.group.VM_Name
+                }
+            }
+
+    }
+
+    $NADS|sort -Property DataStore |ft
 }
 
 
