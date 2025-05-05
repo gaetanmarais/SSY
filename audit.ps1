@@ -127,10 +127,10 @@ while ($T -ne 0)
                 write-host "Module installed, script will stop here, you will re-run it"
 
                 $POWERCLICFG=Get-PowerCLIConfiguration -Scope AllUsers
-                if ( $POWERCLICFG.InvalidCertificateAction -ne "Ignore" ) { Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope AllUsers -Confirm:$false | out-null}
-                if ( $POWERCLICFG.DefaultVIServerMode -ne "Multiple" ) { Set-PowerCLIConfiguration -DefaultVIServerMode Multiple -Scope AllUsers -Confirm:$false | out-null}
-                if ( $POWERCLICFG.DisplayDeprecationWarnings -ne "False" ) { Set-PowerCLIConfiguration -DisplayDeprecationWarnings 0 -Scope AllUsers -Confirm:$false | out-null}
-                if ( $POWERCLICFG.ParticipateInCEIP -ne "True" ) { Set-PowerCLIConfiguration -ParticipateInCEIP $true -Scope AllUsers -Confirm:$false | out-null}
+                if ( $POWERCLICFG.InvalidCertificateAction -ne "Ignore" ) { Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope User -Confirm:$false | out-null}
+                if ( $POWERCLICFG.DefaultVIServerMode -ne "Multiple" ) { Set-PowerCLIConfiguration -DefaultVIServerMode Multiple -Scope User -Confirm:$false | out-null}
+                if ( $POWERCLICFG.DisplayDeprecationWarnings -ne "False" ) { Set-PowerCLIConfiguration -DisplayDeprecationWarnings 0 -Scope User -Confirm:$false | out-null}
+                if ( $POWERCLICFG.ParticipateInCEIP -ne "True" ) { Set-PowerCLIConfiguration -ParticipateInCEIP $true -Scope User -Confirm:$false | out-null}
 
                 wait 10
                 exit 1
@@ -169,10 +169,10 @@ while ($T -ne 0)
 
 
         $POWERCLICFG=Get-PowerCLIConfiguration -Scope AllUsers
-        if ( $POWERCLICFG.InvalidCertificateAction -ne "Ignore" ) { Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope AllUsers -Confirm:$false | out-null}
-        if ( $POWERCLICFG.DefaultVIServerMode -ne "Multiple" ) { Set-PowerCLIConfiguration -DefaultVIServerMode Multiple -Scope AllUsers -Confirm:$false | out-null}
-        if ( $POWERCLICFG.DisplayDeprecationWarnings -ne "False" ) { Set-PowerCLIConfiguration -DisplayDeprecationWarnings 0 -Scope AllUsers -Confirm:$false | out-null}
-        if ( $POWERCLICFG.ParticipateInCEIP -eq "True" ) { Set-PowerCLIConfiguration -ParticipateInCEIP $false -Scope AllUsers -Confirm:$false | out-null}
+        if ( $POWERCLICFG.InvalidCertificateAction -ne "Ignore" ) { Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope User -Confirm:$false | out-null}
+        if ( $POWERCLICFG.DefaultVIServerMode -ne "Multiple" ) { Set-PowerCLIConfiguration -DefaultVIServerMode Multiple -Scope User -Confirm:$false | out-null}
+        if ( $POWERCLICFG.DisplayDeprecationWarnings -ne "False" ) { Set-PowerCLIConfiguration -DisplayDeprecationWarnings 0 -Scope User -Confirm:$false | out-null}
+        if ( $POWERCLICFG.ParticipateInCEIP -eq "True" ) { Set-PowerCLIConfiguration -ParticipateInCEIP $false -Scope User -Confirm:$false | out-null}
 
 
  try { Connect-VIServer -Server $VCENTER -User $UserName -Password $Password -ErrorAction Stop}
