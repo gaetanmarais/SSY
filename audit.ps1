@@ -849,7 +849,7 @@ New-HTMLTabPanelColor -BackgrounColor '#002D3F'
 
           New-HTMLSection -HeaderText "OS Details" -CanCollapse -Collapsed -Direction row {
              
-                            [xml]$OSDETAIL=(Get-ChildItem $TMPPATH -Filter $SDS.caption | sort-object-Property LastWriteTime -Descending | select -First 1)|Get-Content
+                            [xml]$OSDETAIL=(Get-ChildItem $TMPPATH -Filter $SDS.caption | sort-object -Property LastWriteTime -Descending | select -First 1)|Get-Content
                             New-HTMLSection -HeaderText "OS Details" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
                                 zeTable $($OSDETAIL.Windows.System.Windowsdetails.$SDS | select CSName,Caption,InstallDate,LastBootUpTime) 
                                 }
@@ -871,7 +871,7 @@ New-HTMLTabPanelColor -BackgrounColor '#002D3F'
                                 FriendlyName,
                                 SerialNumber,
                                 @{N="Size Gb";E={[Math]::Round($_.Size/1GB)}} | 
-                                sort-objectDeviceId) 
+                                sort-object DeviceId) 
                                 }
                             New-HTMLSection -HeaderText "Volumes" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
                                 zetable $($OSDETAIL.Windows.Volumes.ChildNodes|select DriveLetter,
@@ -913,16 +913,16 @@ New-HTMLTabPanelColor -BackgrounColor '#002D3F'
                                 zetable $($OSDETAIL.Windows.iSCSIConnection.iSCSIconnections.ChildNodes|select ConnectionIdentifier,InitiatorAddress,InitiatorPortNumber,TargetAddress,TargetPortNumber ) 
                                 }
                             New-HTMLSection -HeaderText "Installed Software" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
-                                zeTable $($OSDETAIL.Windows.Software.InstalledSoftware.ChildNodes|select DisplayName,DisplayVersion,InstallDate|sort-object-Property InstallDate -Descending) 
+                                zeTable $($OSDETAIL.Windows.Software.InstalledSoftware.ChildNodes|select DisplayName,DisplayVersion,InstallDate|sort-object -Property InstallDate -Descending) 
                                 }
                             New-HTMLSection -HeaderText "Windows Update" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
-                                zeTable $($OSDETAIL.Windows.WindowsUpdate.WindowsUpdate.ChildNodes|select HotFixID,Description,InstalledOn,Caption|sort-object-Property InstalledOn -Descending ) 
+                                zeTable $($OSDETAIL.Windows.WindowsUpdate.WindowsUpdate.ChildNodes|select HotFixID,Description,InstalledOn,Caption|sort-object -Property InstalledOn -Descending ) 
                                 }
                             New-HTMLSection -HeaderText "EventLogs - Last reboots & crashs" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
-                                zeTable $($OSDETAIL.Windows.EventLog.Reboot_and_Crash.ChildNodes |select TimeGenerated,EntryType,Source,InstanceId,Message|sort-object-Property TimeGenerated) 
+                                zeTable $($OSDETAIL.Windows.EventLog.Reboot_and_Crash.ChildNodes |select TimeGenerated,EntryType,Source,InstanceId,Message|sort-object -Property TimeGenerated) 
                                 }
                             New-HTMLSection -HeaderText "EventLogs - last 100 errors" -CanCollapse -Collapsed -Direction row -HeaderBackGroundColor grey {
-                                zeTable $($OSDETAIL.Windows.EventLog.Last100.ChildNodes|select TimeGenerated,EntryType,Source,InstanceId,Message|sort-object-Property TimeGenerated) 
+                                zeTable $($OSDETAIL.Windows.EventLog.Last100.ChildNodes|select TimeGenerated,EntryType,Source,InstanceId,Message|sort-object -Property TimeGenerated) 
                                 }
 
                             }
