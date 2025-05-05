@@ -107,7 +107,7 @@ while ($T -ne 0)
             PSWriteHTML Powershell module could not be installed automatically please run this command manualy as Administrator." -ForegroundColor Red
             Write-host "    install-module -name pswritehtml -AllowClobber -Confirm:$false -Force  " -ForegroundColor yellow
             wait 10
-            Exit 1           
+           # Exit 1           
             }
 
         }
@@ -122,7 +122,7 @@ while ($T -ne 0)
             Write-Host "
             VMware PowerCLI not found, we will try to install it for you :)" -ForegroundColor Red
             Write-host "      If you don't want to install it on your system, it's time to break the script :)" -ForegroundColor yellow
-            pause
+            wait 10
             try { Install-Module -name VMware.VimAutomation.Core -AllowClobber -Confirm:$false -force -ErrorAction Stop 
                 write-host "Module installed, script will stop here, you will re-run it"
 
@@ -133,7 +133,7 @@ while ($T -ne 0)
                 if ( $POWERCLICFG.ParticipateInCEIP -ne "True" ) { Set-PowerCLIConfiguration -ParticipateInCEIP $true -Scope User -Confirm:$false | out-null}
 
                 wait 10
-                exit 1
+                #exit 1
                 }
             catch { 
                 write-host "Unable to install PowerCLI, please try to install it by yourself" -ForegroundColor Red
