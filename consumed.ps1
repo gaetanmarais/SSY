@@ -78,7 +78,7 @@ $LicenceType=@("Regular","Trial","NFR","Cloud","AzurePayGo")
 catch
     {
     $ERR=1
-    Write-Host "Error Gathering server : $server" -BackgroundColor Red
+    Write-Host "Error Gathering server : $server -- $_" -BackgroundColor Red
     }
 
 if ( $ERR -ne 1 ) { 
@@ -118,6 +118,12 @@ $servers | % {
  $object | Add-Member -Name 'Pools_Storage_Available' -MemberType Noteproperty -Value $PoolsAvailabe
  $object | Add-Member -Name 'Pools_Storage_Total' -MemberType Noteproperty -Value $PoolsTotal
  $object | Add-Member -Name 'Pools_Total_OverSubscription' -MemberType Noteproperty -Value $([math]::Round($((($POOLDATA).PerformanceData.BytesOverSubscribed|Measure-Object -Sum).sum/1TB),2))
+ 
+ ($GROUPDATA | gm -MemberType NoteProperty).Name | % {
+    $NoteProperty=$_
+    $object | Add-Member -Name $NoteProperty -MemberType NoteProperty -Value $GROUPDATA.$NoteProperty
+ }
+ 
  $array += $object
  
  }
@@ -129,4 +135,4 @@ $servers | % {
 }
 
 
- $array | Export-Csv $DESTINATION
+ $array | Export-Csv $DESTINATION -NoTypeInformation
