@@ -21,6 +21,11 @@
 ##         : and/or unblock the execution of this non-signed script
 ##         :      Unblock-File -Path
 
+## version : 3.0
+## date    : 2025/09/24
+## Note    : manage Split/Unserve if required as prerequisit
+##         : variable $forcePurgeWithSplit need to be set to 1 
+
 
 <#
 .SYNOPSIS
@@ -40,8 +45,8 @@
     
 .NOTES
     Author: Gaëtan MARAIS
-    Date:   2020.09.28
-    Version : 2.0
+    Date:   2025.09.24
+    Version : 3.0
 #>
 
 Param(
@@ -80,8 +85,9 @@ $server = $env:COMPUTERNAME
 $ScriptName = "Auto-Repair-Disk"
 
 
-$Time2Wait = 1#60*10    #10 minutes
+$Time2Wait = 10     #10 secondes
 $ForcePurge = 1       #0 Purge will not be executed if dataloss (snap)
+$forcePurgeWithSplit = 1 # 0 is the default value, script will NOT split and unserve the impacted vdisks
 
 $eventlogsource = $scriptname
 New-EventLog -ComputerName $server  -LogName Application -Source $eventlogsource -ErrorAction SilentlyContinue
@@ -261,6 +267,8 @@ Purge Action : NO-PREREQUISITE"
 ======================================================
 Purge Action : PRE-REQUISITES NEEDED"
                 $action=0
+                $NeedAddMirror=0
+                $cdpdetails=Get-DcsLogicalDisk -WithCdpEnabled 1
                 $purgeprereqs | % { $messagelog+="`n$(get-dcsvirtualdisk -VirtualDisk $_.id) ==> $($_.actions)"
                                     if ($_.actions -ne "None") {$action=1}
                                     }
@@ -271,10 +279,36 @@ Purge Action : PRE-REQUISITES NEEDED"
                     Add-DcsLogMessage -Level Warning -Message "$ScriptName : $messagelog"
                     }
                 else {
-                    $messagelog+="`n`nACTION(S) ARE REQUIRED, SCRIPT STOP!!!"
-                    Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
-                    Add-DcsLogMessage -Level error -Message "$ScriptName : $messagelog"
-                    exit 10
+                    if ($ForcePurgeWithSplit -eq 0) {
+                        $messagelog+="`n`nACTION(S) ARE REQUIRED, SCRIPT STOP!!!"
+                        Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
+                        Add-DcsLogMessage -Level error -Message "$ScriptName : $messagelog"
+                        exit 10                        }
+                    else {
+                        
+                        $purgeprereqs | % {
+                            $vdisktosplit=$_.id
+                            $messagelog="SPLIT AND UNSERVE of $(get-dcsvirtualdisk -VirtualDisk $vdisktosplit) is mandatory to recover the pool!!!`nACTION has been allowed by Script`nCDP will be lost"
+                            Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
+                            try {
+                                $SplitResult=(Split-DcsVirtualDisk -UnserveServer $baddiskserver -VirtualDisk $vdisktosplit)
+                                $RemoveVDResult=(Remove-DcsVirtualDisk -VirtualDisk $SplitResult.id -Yes)
+                                $messagelog="SPLIT AND UNSERVE of $(get-dcsvirtualdisk -VirtualDisk $vdisktosplit) has been done"
+                                Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
+                                $NeedAddMirror=1
+                                }
+                            catch {
+                                $ErrorMessage = $_.Exception.Message
+                                $messagelog="Unable to split and unserve $(get-dcsvirtualdisk -VirtualDisk $vdisktosplit)
+                                $ErrorMessage"
+                                Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
+                                Add-DcsLogMessage -Level error -Message "$ScriptName : $messagelog"
+                                
+                                }
+                            }
+
+                        }
+                    
                     }
                 }
         
@@ -339,6 +373,7 @@ Purge Action : PRE-REQUISITES NEEDED"
             $messagelog+="`n--Disk renamed to : $availablediskcaption ($baddiskalias)"
             Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType warning –EventID 1 -Category 0 -Message $messagelog
             Add-DcsLogMessage -Level Warning -Message "$ScriptName : $messagelog"
+            
             }
             catch {
                     $ErrorMessage = $_.Exception.Message
@@ -350,13 +385,40 @@ Purge Action : PRE-REQUISITES NEEDED"
             }
         
 
+        # Some vDisks has been splited to perform the Purge, need to recreate the mirror
+        if ( $NeedAddMirror -eq 1 ) {
+        
+            $purgeprereqs | % {
+                $vdisktomirror=$_.id
+                Add-DcsVirtualDiskMirror -Server $baddiskserver -Pool $baddiskpool -VirtualDisk $vdisktomirror -EnableRedundancy
+                $messagelog="vDisks $(get-dcsvirtualdisk -VirtualDisk $vdisktomirror) mirrored to $(Get-DcsPool -Pool $baddiskpool) ( $(Get-DcsServer -Server $baddiskserver))"
+                Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType warning –EventID 12 -Category 0 -Message $messagelog
+                Add-DcsLogMessage -Level error -Message "$ScriptName : $messagelog"
+                
+                
+                #Recreate CDP as it was
+                sleep $Time2Wait
+                if ( $cdpdetails | ? { $_.VirtualDiskId -eq $vdisktomirror}) {
+                    $oldcdpsize=($cdpdetails | ? { $_.VirtualDiskId -eq $vdisktomirror}).StreamSize
+                    $oldcdppool=($cdpdetails | ? { $_.VirtualDiskId -eq $vdisktomirror}).PoolID
+                    $oldcdpRetentionTime=($cdpdetails | ? { $_.VirtualDiskId -eq $vdisktomirror}).RetentionTime
+                    Enable-DcsDataProtection -VirtualDisk $vdisktomirror -Pool $oldcdppool -HistorySize $oldcdpsize
+                    
+                    Set-DcsDataProtectionProperties -VirtualDisk $vdisktomirror -RetentionPeriod $oldcdpRetentionTime
+                    }
+                }
+
+        }
+
+
+
 }        
 
         
-    
+#More than 1 disk failed, we break the script
 else
     {
-    #More than 1 disk failed, we break the script
+    
     if ($baddisk.count -ne 0) {
         $messagelog="Too many disks failed on pool disk : $diskpoolcaption
         No replace will be operate
