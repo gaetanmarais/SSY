@@ -280,21 +280,22 @@ Purge Action : PRE-REQUISITES NEEDED"
                     }
                 else {
                     if ($ForcePurgeWithSplit -eq 0) {
-                        $messagelog+="`n`nACTION(S) ARE REQUIRED, SCRIPT STOP!!!"
+                        $messagelog+="`n`nACTION(S) ARE REQUIRED and not forced by the script parameter, SCRIPT STOP!!!"
                         Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
                         Add-DcsLogMessage -Level error -Message "$ScriptName : $messagelog"
                         exit 10                        }
                     else {
                         
-                        $purgeprereqs | % {
+                        Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Warning –EventID 10 -Category 0 -Message $messagelog
+                        $purgeprereqs | ? {$_.actions -ne "None"} | % {
                             $vdisktosplit=$_.id
                             $messagelog="SPLIT AND UNSERVE of $(get-dcsvirtualdisk -VirtualDisk $vdisktosplit) is mandatory to recover the pool!!!`nACTION has been allowed by Script`nCDP will be lost"
-                            Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
+                            Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Warning –EventID 10 -Category 0 -Message $messagelog
                             try {
                                 $SplitResult=(Split-DcsVirtualDisk -UnserveServer $baddiskserver -VirtualDisk $vdisktosplit)
                                 $RemoveVDResult=(Remove-DcsVirtualDisk -VirtualDisk $SplitResult.id -Yes)
                                 $messagelog="SPLIT AND UNSERVE of $(get-dcsvirtualdisk -VirtualDisk $vdisktosplit) has been done"
-                                Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Error –EventID 10 -Category 0 -Message $messagelog
+                                Write-EventLog -ComputerName $server –LogName Application –Source $eventlogsource –EntryType Warning –EventID 10 -Category 0 -Message $messagelog
                                 $NeedAddMirror=1
                                 }
                             catch {
@@ -388,7 +389,7 @@ Purge Action : PRE-REQUISITES NEEDED"
         # Some vDisks has been splited to perform the Purge, need to recreate the mirror
         if ( $NeedAddMirror -eq 1 ) {
         
-            $purgeprereqs | % {
+            $purgeprereqs | ? {$_.actions -ne "None"} | % {
                 $vdisktomirror=$_.id
                 Add-DcsVirtualDiskMirror -Server $baddiskserver -Pool $baddiskpool -VirtualDisk $vdisktomirror -EnableRedundancy
                 $messagelog="vDisks $(get-dcsvirtualdisk -VirtualDisk $vdisktomirror) mirrored to $(Get-DcsPool -Pool $baddiskpool) ( $(Get-DcsServer -Server $baddiskserver))"
