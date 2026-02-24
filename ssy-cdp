@@ -1,0 +1,534 @@
+#!/bin/bash
+###########################################################################
+###########################################################################
+#####
+##### Script : ssy-cdp
+##### Author : Gaetan MARAIS DataCore
+#####
+##### Desciption : This script will help in the creation of DataCore rollbacks
+#####              It's VM centric, it detect any king of VM disks (block or LVM)
+#####              generate the associated rollbacks, serves them to the hosts
+#####              create a new VM with these new disks
+#####
+##### Version : 2.0
+#####
+###########################################################################
+###########################################################################
+
+set +m
+
+>/var/log/ssy-cdp.last
+
+####################
+## FUNCTIONS
+####################
+
+function LOGGER {
+
+printf '%-60s%-60s%-40s\n' "$1" "$2" "$3" >>/var/log/ssy-cdp
+printf '%-60s%-60s%-40s\n' "$1" "$2" "$3" >>/var/log/ssy-cdp.last
+
+}
+
+function TUI() {
+
+RESOURCES=$(pvesh get /cluster/resources --output-format json 2>/dev/null| jq -r '.[]| select(.type=="qemu" or .type=="lxc")' )
+
+MENU_OPTIONS=()
+VMIDS=()
+VMNAMES=()
+VMNODES=()
+VMSTATUSS=()
+
+INDEX=0
+
+while read -r row; do
+    VMIDS+=($(echo "$row" | jq -r '.vmid'))
+    VMNAMES+=($(echo "$row" | jq -r '.name'))
+    VMNODES+=($(echo "$row" | jq -r '.node'))
+    VMSTATUSS+=($(echo "$row" | jq -r '.status'))
+
+    MENU_OPTIONS+=("$INDEX" "ID:${VMIDS[$INDEX]} | Name:${VMNAMES[$INDEX]} (${VMSTATUSS[$INDEX]})")
+    ((INDEX++))
+done <<< "$(echo "$RESOURCES" | jq -c '.')"
+
+     CHOICE=$(whiptail --title "Rollback" \
+                  --menu "Select the VM you want to rollback :" \
+                  20 90 12 \
+                  "${MENU_OPTIONS[@]}" \
+                  3>&1 1>&2 2>&3)
+
+     if [[ ! $CHOICE ]]
+     then
+        whiptail --title "ERREUR" --msgbox "No VM selected" 10 50
+        echo "No VM selected"
+        exit 3
+     fi
+     VMCONF=$(pvesh get /nodes/${VMNODES[$CHOICE]}/qemu/${VMIDS[$CHOICE]}/config --output-format json | jq -r ' to_entries[] | select(.key != "digest") | "\(.key): \(.value)"')
+}
+
+
+function CHECK_CDP_ENABLED {
+  LENGTH=$1
+  CDPIDS=()
+  CDPPOOLS=()
+  VDNAMES=()
+  VDIDS=()
+  CDPSTATUSVALUE=("Online" "Offline" "NotPresent" "NotReady")
+  for (( i=0;i<(($LENGTH));i++ ))
+  do
+    VD=$(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/virtualdisks)
+    VDNAME=$(echo ${VD} | jq -r --arg v "${VDNAAS[$i]}"  '.[]|select((.ScsiDeviceIdString|ascii_upcase)==($v|ascii_upcase))|.Caption|sub(" ";"_")')
+    VDID=$(echo ${VD} | jq -r --arg v "${VDNAAS[$i]}"  '.[]|select((.ScsiDeviceIdString|ascii_upcase)==($v|ascii_upcase))|.Id')
+    CDP=$(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/logicaldisks?virtualdisk=${VDID})
+
+echo "$CDP"|jq .>/tmp/CDP.tmp
+
+    CDPPOOL=$(echo $CDP|jq -r '.[]|select(.StreamState==4)|.PoolId')
+    CDPID=$(echo $CDP|jq  -r '.[]|select(.StreamState==4)|.Id')
+    CDPSTATUS=$(echo $CDP|jq  -r '.[]|select(.StreamState==4)|.DiskStatus')
+    VDNAMES+=(${VDNAME})
+    VDIDS+=(${VDID})
+    CDPPOOLS+=(${CDPPOOL})
+    CDPIDS+=(${CDPID})
+    VDNAAS+=(${VDNAA})
+    LOGGER "$VDNAME" "${VDNAAS[$i]}" "(Vdisk naa)"
+    LOGGER "$VDNAME" "$CDPPOOL" "(CDP pool id)"
+    LOGGER "$VDNAME" "$CDPID" "(CDP id)"
+    LOGGER "$VDNAME" "$CDPSTATUS" "(CDP Status)"
+
+    if [[ $CDPSTATUS -ne 0 ]]
+    then
+      echo -e "CDP issue, the status of CDP is ${YELLOW}${CDPSTATUSVALUE[${CDPSTATUS}]}${NC}, please have a look on SSY side"
+      echo "  Rollback of the VM is not possible at this time, exiting :("
+      whiptail --title "ERREUR" --msgbox "CDP issue, the status of CDP is ${CDPSTATUSVALUE[${CDPSTATUS}]}, please have a look on SSY side\nRollback of the VM is not possible at this time, exiting :(." 10 50
+      exit 100
+    fi
+  done
+  echo ""
+
+}
+function CHECK_EXISTING_ROLLBACK {
+  LENGTH=$1
+  EXISTING_ROLLBACKS=()
+  for (( i=0;i<(($LENGTH));i++ ))
+  do
+    EXISTING_ROLLBACKS+=($(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/rollbacks | jq -r '.[]|select(.SourceLogicalDiskId=="'${CDPIDS[$i]}'")|.Caption'))
+  done
+
+  if [[ ${EXISTING_ROLLBACKS[@]} ]]
+  then
+    echo "Below the list of existing rollbacks for this VirtualDisk"
+    echo -e "${YELLOW}"
+    echo -e "${EXISTING_ROLLBACKS[@]}"| tr ' ' '\n' | sort -u
+    echo -e "${NC}"
+  fi
+}
+
+
+function GET_READABLE_RET {
+
+  TOTAL_SECONDS=$(( $1 / 1000 ))
+  DAYS=$(( TOTAL_SECONDS / 86400 ))
+  REMAINING_SECONDS=$(( TOTAL_SECONDS % 86400 ))
+  HOURS=$(( REMAINING_SECONDS / 3600 ))
+  REMAINING_SECONDS=$(( REMAINING_SECONDS % 3600 ))
+  MINUTES=$(( REMAINING_SECONDS / 60 ))
+  SECONDS=$(( REMAINING_SECONDS % 60 ))
+  echo "${DAYS}d ${HOURS}h ${MINUTES}m ${SECONDS}s"
+}
+
+
+function GET_CDP_RETENTION {
+  LENGTH=$1
+  CDP_RETENTIONS=()
+
+  PREVIOUS_RETENTION=9999999999999999
+  LAST_RETENTION=0
+
+  for (( i=0;i<(($LENGTH));i++ ))
+  do
+     RETENTION=0
+     while [[ $RETENTION -eq 0 ]]
+     do
+       RETENTION=$(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/performance/${CDPIDS[$i]}|jq -r '.[]|.RetentionPeriod')
+     done
+     ZERETENTION=$(GET_READABLE_RET RETENTION)
+     LOGGER "${VDNAMES[$i]}" "$RETENTION"  "$ZERETENTION"
+
+
+     if [[ $RETENTION -lt $PREVIOUS_RETENTION ]] ; then LAST_RETENTION=${RETENTION} ; fi
+     PREVIOUS_RETENTION=$RETENTION
+  done
+
+  NOW=$(date +"%b %d %Y %H:%M:%S")
+  MAX_RETENTION=$(GET_READABLE_RET LAST_RETENTION)
+  LOGGER "${VDNAMES[$i]}" "Max retention" "${MAX_RETENTION}"
+  RET_DATE=$(date -d "@$(( $(date +%s) - $LAST_RETENTION / 1000 ))" +"%b %d %Y %H:%M:%S")
+  echo ""
+  echo -e "Max retention is : ${YELLOW}${MAX_RETENTION}${NC}"
+  echo "You can roolback between these 2 dates:"
+  echo -e "\tFrom ${YELLOW}${RET_DATE}${NC}"
+  echo -e "\tTo   ${YELLOW}${NOW}${NC}"
+}
+
+function GET_ROLLBACK_DATE {
+
+if [[ ! ${EXISTING_ROLLBACKS[@]} ]]
+then
+ROLLDATE=$(whiptail --title "Rollback" \
+                      --inputbox "Max retention is : ${MAX_RETENTION}\nYou can roolback between these 2 dates:\nFrom ${RET_DATE}\nTo   $(date +"%b %d %Y %H:%M:%S")" \
+                      10 60 \
+                      "${NOW}" \
+                      3>&1 1>&2 2>&3)
+
+else
+
+ROLLDATE=$(whiptail --title "Rollback" \
+                      --inputbox "Existing rollbacks:\n$(echo ${EXISTING_ROLLBACKS[@]}|sed "s/ /\\n/g") \n\n\nMax retention is : ${MAX_RETENTION}\nYou can roolback between these 2 dates:\nFrom ${RET_DATE}\nTo   $(date +"%b %d %Y %H:%M:%S")" \
+                      20 60 \
+                      "${NOW}" \
+                      3>&1 1>&2 2>&3)
+
+fi
+  RET=$(date -d "$ROLLDATE" +%s)
+  if [[ $? -ne 0 ]]
+  then
+    GET_ROLLBACK_DATE
+  fi
+  if [[ "$ROLLDATE" == "" ]]
+  then
+      whiptail --title "ERREUR" --msgbox "No date, no RollBack, byebye :)" 10 50
+    echo "No date, no RollBack, byebye :)"
+    exit 3
+  fi
+  if [[ $(($(date -d "$ROLLDATE" +%s)-$(date -d "$RET_DATE" +%s))) -lt 0 ]]
+  then
+    whiptail --title "ERREUR" --msgbox "Too early" 10 50
+    echo "Too early"
+    GET_ROLLBACK_DATE
+  fi
+  if [[ $(($(date -d "$ROLLDATE" +%s)-$(date +%s))) -gt 0 ]]
+  then
+    whiptail --title "ERREUR" --msgbox "Too late" 10 50
+    echo "Too late"
+    GET_ROLLBACK_DATE
+  fi
+
+  ROLLBACK_DATE=$(date -d "$ROLLDATE" +"%b %d %Y %H:%M:%S %z")
+  ROLLBACK_DATE2=$(date -d "$ROLLDATE" +"%Y-%m-%d_%H:%M:%S")
+  ROLLBACK_DATE3=$(date -d "$ROLLDATE" +"%Y%m%d-%H%M%S")
+
+  LOGGER "${VDNAMES[$i]}" "Roolback date:" "${ROLLBACK_DATE}"
+}
+
+
+function CREATE_ROLLBACK {
+  LENGTH=$1
+  ROLLBACKIDS=()
+
+  for (( i=0;i<(($LENGTH));i++ ))
+  do
+
+  #TEST IF ROLLBACK ALREADY EXIST
+  if [[ $(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/rollbacks | jq -r '.[]|select(.Caption=="'${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}'")') ]]
+  then
+    ROLLBACKID=($(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/virtualdisks?kind=Rollback|jq -r --arg v "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}"  '.[]|select(.Alias==$v)|.Id'))
+    ROLLBACKIDS+=(${ROLLBACKID})
+    LOGGER "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}" "Rollback ID:" "${ROLLBACKID}"
+    #echo "This rollback already exist, we will not created it again"
+    LOGGER "${VDNAMES[$i]}" "Roolback already exist" "${ROLLBACK_DATE}"
+    return 30
+  fi
+
+
+  cat > /tmp/body.${VDIDS[$i]} <<EOF
+{
+   "Name" : "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}",
+   "DestinationPool" : "${CDPPOOLS[$i]}",
+   "VirtualDisk" : "${VDIDS[$i]}",
+   "RestorePoint" : "$ROLLBACK_DATE",
+   "DuplicateDiskId" : "false",
+   "AutoExpire" : "false"
+}
+EOF
+
+  #Create the rollback
+  ROLLBACKID=$(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/rollbacks -d "$(cat /tmp/body.${VDIDS[$i]})")
+  if [[ $(echo $ROLLBACKID|grep "{\"ErrorCode") ]]
+  then
+    echo $ROLLBACKID
+    LOGGER "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}" "$ROLLBACKID"
+    exit 10
+  fi
+  if [[ ! $(echo $ROLLBACKID) ]]
+  then
+    echo "Error during Rollback creation"
+    LOGGER "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}" "$ROLLBACKID"
+    exit 10
+  fi
+
+  ROLLBACKID=($(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/virtualdisks?kind=Rollback|jq -r --arg v "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}"  '.[]|select(.Alias==$v)|.Id'))
+  ROLLBACKIDS+=(${ROLLBACKID})
+  LOGGER "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}" "Rollback ID:" "${ROLLBACKID}"
+  done
+  echo "Rollbacks created"
+}
+
+function SERVE_ROLLBACK {
+  LENGTH=$1
+  SERVED_ROLLBACKIDS=()
+  for (( i=0;i<(($LENGTH));i++ ))
+  do
+    #Get latest LUNID serverd
+    LUNID=$(($(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/virtuallogicalunits |jq .[].Lun.Quad|sort -u|tail -1)+1))
+    LOGGER "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}" "Next LUNID available:" "$LUNID"
+    #List PVE hostID
+    curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/hosts|jq -r '.[]|select(.Type==7)|.Id' | while read HOSTID
+    do
+      cat > /tmp/serverollback.${VDIDS[$i]} <<EOF
+{
+    "Operation": "Serve",
+    "Host": "$HOSTID",
+    "LUN": "$LUNID",
+    "Redundancy": "true"
+}
+EOF
+      SERVED_ROLLBACK=$(curl -s -m 1 -k -L -XPOST -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/virtualdisks/${ROLLBACKIDS[$i]} -d "$(cat /tmp/serverollback.${VDIDS[$i]})")
+    done
+    SERVED_ROLLBACKIDS+=($(curl -s -m 1 -k -L -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/virtualdisks| jq -r --arg v "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}"  '.[]|select(.Caption==$v)|.ScsiDeviceIdString'))
+  LOGGER "${VDNAMES[$i]}_rollback_${ROLLBACK_DATE3}" "Served Device ID:" "${SERVED_ROLLBACKIDS[$i]}"
+  done
+
+RESCAN=$(/usr/bin/rescan-scsi-bus.sh)
+  echo "SCSI bus rescanned"
+
+}
+
+function GET_NEWVMID {
+  #Detect new VMID available
+  num=900
+  LASTVM=$(awk -F"\"" '/node/ {print $2}' /etc/pve/.vmlist | sort | tail -n1)
+  while [[ ${num} -le ${LASTVM} ]]
+  do
+    ((num++))
+  done
+
+
+  LOGGER "Latest VMID:" $num
+}
+
+function CREATE_NEWVM {
+  LENGTH=$1
+
+  #cp /etc/pve/qemu-server/${VMID}.conf /tmp/${num}.conf
+  pvesh get /nodes/${VMNODES[$CHOICE]}/qemu/${VMIDS[$CHOICE]}/config --output-format json | jq -r ' to_entries[] | select(.key != "digest") | "\(.key): \(.value)" ' > /tmp/${num}.conf
+
+  # remove the  "smbios1" o "vmgenid" lines
+  sed -i '/^smbios1:/d;/^vmgenid:/d' "/tmp/${num}.conf"
+
+  # disable the network interfaces
+  sed -i '/^net[0-9]\+/ { /link_down=1/! s/$/,link_down=1/ }' "/tmp/${num}.conf"
+  # change VM name
+  sed -i '/^name:/ s/$/-roolback-'${VMID}'-'${ROLLBACK_DATE3}'/' "/tmp/${num}.conf"
+
+  #add ROLLBACK tag to the VM
+  if [[ $(grep -c "tags:" "/tmp/${num}.conf") -eq 0 ]]
+  then
+    echo "tags: rollback">>"/tmp/${num}.conf"
+  else
+    sed -E -i '/^tags:/ s/$/;rollback/' "/tmp/${num}.conf"
+  fi
+
+  if [[ ${LVMS[@]} ]]
+  then
+    #importe the new VG and change the pathg of the storage
+    for (( i=0;i<(($LENGTH));i++ ))
+    do
+      #test if VG is already mounted
+      RESULT=$(vgdisplay "${VGS[$i]}_rollback_${ROLLBACK_DATE3}"  > /dev/null 2>&1)
+      if [[ $? -eq 0 ]]
+      then
+        echo "VG "${VGS[$i]}_rollback_${ROLLBACK_DATE3}" already mounted, not need to mount it again"
+      else
+        j=0
+        NEWDEVICE=$(lsblk -o name,serial | grep ${ROLLBACKIDS[$i]} -A1|grep mpath |sort -u | sed 's/[^a-zA-Z]//g')
+        while ( [ ! ${NEWDEVICE} ] )
+        do
+          if [[ $j -gt 100 ]]
+          then
+            echo "Unable to discover device ${ROLLBACKIDS[$i]} even after 10 rescans..exiting"
+            exit 100
+          fi
+          RESCAN=$(/usr/bin/rescan-scsi-bus.sh  > /dev/null 2>&1)
+          RESCAN=$(/usr/sbin/multipath -F  > /dev/null 2>&1)
+          RESCAN=$(/usr/sbin/multipath -r  > /dev/null 2>&1)
+          NEWDEVICE=$(lsblk -o name,serial | grep ${ROLLBACKIDS[$i]} -A1|grep mpath |sort -u | sed 's/[^a-zA-Z]//g')
+          echo -ne "$j%\033[0K\r"
+          ((j=$j+5))
+          sleep 5
+        done
+        LOGGER "${VGS[$i]}_rollback_${ROLLBACK_DATE3}" "/dev/mapper/${NEWDEVICE}"
+        #echo "pvscan"
+        RESULT=$(/usr/sbin/pvscan >/dev/null 2>&1)
+        #echo "vgscan"
+        RESULT=$(/usr/sbin/vgscan >/dev/null 2>&1)
+        #echo "vgimportclone"
+        RESULT=$(/usr/sbin/vgimportclone -n "${VGS[$i]}_rollback_${ROLLBACK_DATE3}" /dev/mapper/${NEWDEVICE})
+        if [[ $? -ne 0 ]]
+        then
+          echo ${RESULT}
+          echo "Unable to import the rollback, exiting :("
+          exit 20
+        fi
+        #echo "vgchange -ay"
+        RESULT=$(/usr/sbin/vgchange -ay  >/dev/null 2>&1)
+        #echo "pvchange --uuid"
+        RESULT=$(/usr/sbin/pvchange --uuid /dev/mapper/${NEWDEVICE}   >/dev/null 2>&1)
+      fi
+      if [[ $(grep -c "${LVMS[$i]}_rollback_${ROLLBACK_DATE3}" /etc/pve/storage.cfg) -eq 0 ]]
+      then
+        /usr/sbin/pvesm add lvm "${LVMS[$i]}_rollback_${ROLLBACK_DATE3}" --vgname "${VGS[$i]}_rollback_${ROLLBACK_DATE3}" --content images --shared 1
+      else
+        echo "Storage already present in /etc/pve/storage.cfg file"
+      fi
+
+      sed -i -E 's/: '${LVMS[$i]}':/: '${LVMS[$i]}'_rollback_'${ROLLBACK_DATE3}':/' "/tmp/${num}.conf"
+    done
+  else
+    #Not and LVM VM, using SSY blcok storage
+    # replace the block device by the new one
+    for (( i=0;i<(($LENGTH));i++ ))
+    do
+      sed -i -E 's/'${VDNAAS[$i]}'/\L'${SERVED_ROLLBACKIDS[$i]}'/' "/tmp/${num}.conf"
+    done
+  fi
+  cp /tmp/${num}.conf /etc/pve/qemu-server
+  whiptail --title "VM creation" --msgbox "A new VM (${num}) has been created\n\n$(grep ^name: /tmp/${num}.conf)\n$(grep rollback /tmp/${num}.conf)\n\nCAUTION! Networks has been disabled...but the MAC address remain the same as original VM!" 20 140
+
+  echo "New VM created with"
+  echo " id: ${num}"
+  echo " $(grep ^name: /tmp/${num}.conf)"
+  echo " $(grep rollback /tmp/${num}.conf)"
+  echo " Networks has been disabled...caution with MACADDRESS that are cloned"
+  LOGGER "VM created: " "$(awk -F":" '/^name:/ {print $2}' /tmp/${num}.conf)" "$(date)"
+}
+
+function GET_CREDENTIALS {
+  SSYUSER=$(awk '/SSYusername/ {print $2}' /etc/pve/storage.cfg)
+  SSYPWD=$(awk '/SSYpassword/ {print $2}' /etc/pve/storage.cfg)
+  DCHOSTS=($(awk -F" |," '/SSYipAddress/ {print $2" "$3}' /etc/pve/storage.cfg))
+
+  for DCHOST in ${DCHOSTS[@]}
+  do
+    CURL=$(curl --write-out %{http_code} -m 5 --output /dev/null -k -s -H "ServerHost: ${DCHOST}" -u${SSYUSER}:${SSYPWD} https://${DCHOST}/RestService/rest.svc/1.0/servers)
+    echo $CURL
+    if [[ "$CURL" -eq 200 ]]
+    then
+      break
+    fi
+  done
+  if [[ "$CURL" -ne 200 ]]
+  then
+    echo "Credential or RestAPI issue, please check /etc/pve/storage.cfg. Exiting"
+    exit 100
+  fi
+}
+
+function CHECK_DISKS {
+
+#DISKS=$(grep -c "\-360030d90" /etc/pve/qemu-server/${VMID}.conf)
+DISKS=$(echo "$VMCONF"|grep -c "\-360030d90")
+# disks are block level
+if [[ ${DISKS} -ne 0 ]]
+then
+  VDNAAS=()
+  while read line
+  do
+    VDNAA=$(echo ${line}|awk -F":" '{print substr($3,length($3)-31,34)}')
+    VDNAAS+=(${VDNAA})
+  done < <(echo "$VMCONF"|grep "\-360030d90")
+#  done < <(grep "\-360030d90" /etc/pve/qemu-server/${VMID}.conf)
+  echo -e "${YELLOW}${DISKS}${NC} SSY disks dicovered for the VM ${YELLOW}${VMNAME}${NC}"
+
+#Disks are LVM ones
+else
+  LVMS=()
+  VGS=()
+  DEVICES=()
+  VDNAAS=()
+  while read line
+  do
+    LVMS+=(${line})
+    VG=($(grep "^lvm: ${line}$" -A4 /etc/pve/storage.cfg | awk '/vgname/ {print $2}'))
+    VGS+=($VG)
+    DEVICE=$(echo $(pvs --noheadings -o pv_name --select vg_name=${VG} --quiet 2>/dev/null|grep /dev)|sed "s/ //g")
+    if [[ ! $DEVICE ]]; then
+      echo "ERROR!!! DEVICE not detected via PVS ??!!";
+      whiptail --title "ERREUR" --msgbox " DEVICE not detected via PVS ??!!:(." 10 50
+      exit 100
+    fi
+
+    DEVICES+=($DEVICE)
+    VDNAA=$((udevadm info --query=property --name=${DEVICE} --value --property=DM_SERIAL)|sed "s/.//")
+    VDNAAS+=($VDNAA)
+    LOGGER $VMID "LVM Storage" $line
+    LOGGER $VMID "VG Storage" $VG
+    LOGGER $VMID "device" $DEVICE
+    LOGGER $VMID "naa" $VDNAA
+  done < <(echo "$VMCONF" |awk -F":" '/^scsi.:/ {print $2}'| sed 's/ //g')
+  #done < <(awk -F":" '/^scsi.:/ {print $2}' /etc/pve/qemu-server/${VMID}.conf| sed 's/ //g')
+  DISKS=${#VGS[@]}
+
+  if [[ ${DISKS} -eq 0 ]]
+  then
+    echo  "No compatible storage detected"
+    whiptail --title "ERREUR" --msgbox " No compatible storage detected, sorry :(" 10 50
+    exit 10
+  fi
+  echo ""
+  echo -e "${YELLOW}${DISKS}${NC} disks in LVM storage detected for ${YELLOW}${VMNAME}${NC}"
+fi
+}
+
+
+function CHECK_ALL_DISKS_HAVE_CDP {
+
+  if [[ ${#VDNAA[*]} -gt ${#CDPIDS[*]} ]]
+  then
+    echo ""
+    echo "Some disks for the VM ${VMNAME} have no CDP activated, not able to recreate the VM based on CDP, sorry :("
+    whiptail --title "ERREUR" --msgbox " Some disks for the VM ${VMNAME} have no CDP activated, not able to recreate the VM based on CDP, sorry :(" 10 50
+    exit 2
+  fi
+}
+
+#############
+## SCRIPT
+#############
+
+GET_CREDENTIALS
+LOGGER "======================================================================="
+LOGGER "$(date)"
+
+TUI
+VMID=${VMIDS[$CHOICE]}
+VMNAME=${VMNAMES[$CHOICE]}
+LOGGER $VMID $VMNAME
+GET_NEWVMID
+CHECK_DISKS
+CHECK_CDP_ENABLED ${DISKS}
+CHECK_EXISTING_ROLLBACK ${DISKS}
+CHECK_ALL_DISKS_HAVE_CDP ${DISKS}
+GET_CDP_RETENTION ${DISKS}
+GET_ROLLBACK_DATE
+CREATE_ROLLBACK ${DISKS}
+SERVE_ROLLBACK ${DISKS}
+CREATE_NEWVM ${DISKS}
+
+
+ssy-multipath >>/var/log/ssy-cdp
+#clean
+rm -f /tmp/body.*
+rm -f /tmp/serverollback.*
+rm -f /tmp/${num}.conf
